@@ -50,9 +50,7 @@ const keyframePointSchema = z.object({
 const videoKeyframeAnimationSchema = z.object({
   easing: z.enum(easingValues).optional(),
   endFrame: frameSchema,
-  keyframes: z
-    .tuple([keyframePointSchema, keyframePointSchema])
-    .rest(keyframePointSchema),
+  keyframes: z.array(keyframePointSchema).min(2),
   property: z.enum(numericAnimationPropertyValues),
   startFrame: frameSchema,
   type: z.literal("keyframes"),
@@ -166,7 +164,7 @@ export const videoDescriptionSchema = z
     background: z.string().trim().min(1).optional(),
     fps: z.number().positive(),
     height: z.number().int().positive(),
-    scenes: z.tuple([videoSceneSchema]).rest(videoSceneSchema),
+    scenes: z.array(videoSceneSchema).min(1),
     width: z.number().int().positive(),
   })
   .superRefine((videoDescription, ctx) => {

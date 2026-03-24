@@ -1,5 +1,3 @@
-import "server-only";
-
 const SUPPORTED_NODE_TYPES = ["group", "rect", "text"] as const;
 const SUPPORTED_EFFECTS = ["fade-in", "scale-in", "slide-in"] as const;
 const SUPPORTED_TEXT_ALIGNMENTS = ["left", "center", "right"] as const;
@@ -10,9 +8,11 @@ const DEFAULT_VIDEO_DIMENSIONS = {
 } as const;
 
 export const PROMPT_TO_VIDEO_MODEL =
-  process.env.OPENAI_VIDEO_MODEL ?? "gpt-4.1-mini";
+  process.env.AI_GATEWAY_MODEL ??
+  process.env.OPENAI_VIDEO_MODEL ??
+  "openai/gpt-5.4";
 
-export const PROMPT_TO_VIDEO_PROVIDER_API_KEY_ENV_VAR = "OPENAI_API_KEY";
+export const PROMPT_TO_VIDEO_PROVIDER_API_KEY_ENV_VAR = "AI_GATEWAY_API_KEY";
 
 export const PROMPT_TO_VIDEO_SYSTEM_PROMPT = `
 You generate video scene descriptions for a deterministic renderer.
@@ -32,6 +32,7 @@ Follow these rules exactly:
 - Prefer rect and text compositions that can render without external assets.
 - Keep text concise. Headlines should usually be one short sentence or less.
 - Start the first scene at frame 0 and ensure later scenes begin when earlier scenes end.
+- Every animation frame window must fit inside its scene. If a scene lasts N frames, animation endFrame values must be less than N.
 - Never include commentary, markdown, or extra keys outside the schema.
 `.trim();
 

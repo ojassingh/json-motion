@@ -9,6 +9,7 @@
     "start": "next start",
     "test": "bun test",
     "render:fixture": "bun run scripts/render-fixture.ts",
+    "prompt:smoke": "bun run scripts/prompt-to-video-smoke.ts",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",

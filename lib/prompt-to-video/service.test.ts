@@ -115,10 +115,10 @@ describe("createPromptToVideoService", () => {
         Promise.reject(
           new PromptToVideoError(
             "CONFIGURATION_ERROR",
-            "Missing OPENAI_API_KEY.",
+            "Missing AI_GATEWAY_API_KEY.",
             {
               details: [
-                "Set OPENAI_API_KEY before calling /api/generate-video.",
+                "Set AI_GATEWAY_API_KEY before calling /api/generate-video.",
               ],
               status: 500,
             }

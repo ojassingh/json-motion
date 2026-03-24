@@ -21,6 +21,12 @@ bun install
 bun run dev
 ```
 
+For the prompt-to-video flow, set:
+
+```bash
+AI_GATEWAY_API_KEY=your_key_here
+```
+
 ## Render API
 
 `POST /api/render`
@@ -94,6 +100,14 @@ Render it locally:
 
 ```bash
 bun run render:fixture
+```
+
+## Prompt-to-video smoke test
+
+Run a live prompt generation plus render with the sample prompt:
+
+```bash
+bun run prompt:smoke
 ```
 
 ## Tests and checks
