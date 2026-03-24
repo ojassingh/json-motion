@@ -1,25 +1,10 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+
 import type { VideoDescription } from "@/lib/types/video";
 
-const generateText = mock(async () => ({
-  output: sampleVideoDescription,
-}));
-
-const gateway = mock((modelId: string) => ({
-  provider: "gateway",
-  modelId,
-}));
-
-mock.module("ai", () => ({
-  Output: {
-    object: (options: unknown) => options,
-  },
-  gateway,
-  generateText,
-}));
-
+const aiSdk = await import("ai");
 const { generateVideoDescriptionFromPrompt } = await import(
-  "./generate-video-description-core"
+  "@/lib/ai/generate-video-description"
 );
 
 const sampleVideoDescription: VideoDescription = {
@@ -54,15 +39,7 @@ describe("generateVideoDescriptionFromPrompt", () => {
   const originalGatewayKey = process.env.AI_GATEWAY_API_KEY;
 
   afterEach(() => {
-    generateText.mockReset();
-    generateText.mockImplementation(async () => ({
-      output: sampleVideoDescription,
-    }));
-    gateway.mockReset();
-    gateway.mockImplementation((modelId: string) => ({
-      provider: "gateway",
-      modelId,
-    }));
+    mock.restore();
 
     if (originalGatewayKey) {
       process.env.AI_GATEWAY_API_KEY = originalGatewayKey;
@@ -73,6 +50,7 @@ describe("generateVideoDescriptionFromPrompt", () => {
   });
 
   it("returns a configuration error when the gateway key is missing", async () => {
+    const generateText = spyOn(aiSdk, "generateText");
     process.env.AI_GATEWAY_API_KEY = "";
 
     await expect(
@@ -87,7 +65,23 @@ describe("generateVideoDescriptionFromPrompt", () => {
   });
 
   it("uses the explicit gateway provider and returns the generated scene", async () => {
+    const gateway = spyOn(aiSdk, "gateway");
+    const generateText = spyOn(aiSdk, "generateText");
     process.env.AI_GATEWAY_API_KEY = "test-key";
+    gateway.mockReturnValueOnce({
+      modelId: "openai/gpt-5.4",
+      provider: "gateway",
+    } as unknown as ReturnType<typeof aiSdk.gateway>);
+    generateText.mockResolvedValueOnce({
+      finishReason: "stop",
+      output: sampleVideoDescription,
+      usage: {
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+      },
+      warnings: [],
+    } as unknown as Awaited<ReturnType<typeof aiSdk.generateText>>);
 
     await expect(
       generateVideoDescriptionFromPrompt("a simple square")
@@ -98,7 +92,13 @@ describe("generateVideoDescriptionFromPrompt", () => {
   });
 
   it("normalizes upstream model failures", async () => {
+    const gateway = spyOn(aiSdk, "gateway");
+    const generateText = spyOn(aiSdk, "generateText");
     process.env.AI_GATEWAY_API_KEY = "test-key";
+    gateway.mockReturnValueOnce({
+      modelId: "openai/gpt-5.4",
+      provider: "gateway",
+    } as unknown as ReturnType<typeof aiSdk.gateway>);
     generateText.mockRejectedValueOnce(new Error("gateway schema mismatch"));
 
     await expect(

@@ -6,8 +6,8 @@ import path from "node:path";
 
 import { resolveFrame, resolveNodeTransform } from "@/lib/video/animation";
 import { sampleVideoDescription } from "@/lib/video/fixtures/sample-video-description";
+import { renderVideo } from "@/lib/video/render-video";
 import { videoDescriptionSchema } from "@/lib/video/schema";
-import { renderVideo } from "@/lib/video/service";
 import { getSceneForFrame, getTotalFrameCount } from "@/lib/video/timeline";
 
 const ffmpegIsAvailable =
