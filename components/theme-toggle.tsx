@@ -14,7 +14,6 @@ export function ThemeToggle() {
       onClick={() => {
         setTheme(isDark ? "light" : "dark");
       }}
-      size="icon-sm"
       type="button"
       variant="outline"
     >
