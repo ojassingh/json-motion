@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {}
+const nextConfig = {
+  serverExternalPackages: ["skia-canvas"],
+};
 
-export default nextConfig
+export default nextConfig;
