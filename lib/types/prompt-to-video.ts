@@ -18,6 +18,10 @@ export const promptToVideoRequestSchema = z.object({
 
 export type PromptToVideoRequest = z.infer<typeof promptToVideoRequestSchema>;
 
+export interface PromptToVideoSceneResponse {
+  scene: VideoDescription;
+}
+
 export interface PromptToVideoRenderMetadata {
   codec: string;
   fps: number;
@@ -33,6 +37,18 @@ export interface PromptToVideoSuccessResponse {
   video: PromptToVideoRenderMetadata;
 }
 
+export interface RenderVideoResponse {
+  codec: string;
+  filePath: string;
+  fps: number;
+  frameCount: number;
+  jobId: string;
+  url: string | null;
+}
+
+export type PromptToSceneResponse =
+  | AppErrorResponse
+  | PromptToVideoSceneResponse;
 export type PromptToVideoResponse =
   | AppErrorResponse
   | PromptToVideoSuccessResponse;
