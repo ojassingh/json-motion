@@ -19,11 +19,11 @@
 
 ## 3. Prompt UI
 
-- [ ] 3.1 Replace the starter page with a simple prompt form built from shadcn
+- [x] 3.1 Replace the starter page with a simple prompt form built from shadcn
   components and explicit loading and disabled submit states.
-- [ ] 3.2 Show the latest successful result with a video preview and generated
+- [x] 3.2 Show the latest successful result with a video preview and generated
   scene data on the same screen.
-- [ ] 3.3 Show actionable inline errors and keep the UI in-memory only, with no
+- [x] 3.3 Show actionable inline errors and keep the UI in-memory only, with no
   persistence or history requirements.
 
 ## 4. Verification
@@ -32,4 +32,4 @@
   mocked AI generation and render dependencies.
 - [x] 4.2 Add coverage for the main success and failure response flows without
   relying on a live model or `ffmpeg`.
-- [ ] 4.3 Run `bun x ultracite check` and `bun test`, then fix any issues found.
+- [x] 4.3 Run `bun x ultracite check` and `bun test`, then fix any issues found.
