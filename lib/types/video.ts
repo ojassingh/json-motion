@@ -50,7 +50,7 @@ export interface VideoKeyframePoint {
 export interface VideoKeyframeAnimation {
   easing?: VideoEasingName;
   endFrame: number;
-  keyframes: [VideoKeyframePoint, VideoKeyframePoint, ...VideoKeyframePoint[]];
+  keyframes: VideoKeyframePoint[];
   property: NumericAnimationProperty;
   startFrame: number;
   type: "keyframes";
@@ -149,7 +149,7 @@ export interface VideoDescription {
   background?: VideoColor;
   fps: number;
   height: number;
-  scenes: [VideoScene, ...VideoScene[]];
+  scenes: VideoScene[];
   width: number;
 }
 

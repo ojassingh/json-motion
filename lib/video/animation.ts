@@ -98,7 +98,11 @@ const resolveKeyframeAnimationValue = (
     return null;
   }
 
-  const [firstKeyframe] = animation.keyframes;
+  const firstKeyframe = animation.keyframes[0];
+
+  if (!firstKeyframe) {
+    return null;
+  }
 
   const lastKeyframe = animation.keyframes.at(-1);
 
@@ -117,6 +121,10 @@ const resolveKeyframeAnimationValue = (
   for (let index = 0; index < animation.keyframes.length - 1; index += 1) {
     const currentKeyframe = animation.keyframes[index];
     const nextKeyframe = animation.keyframes[index + 1];
+
+    if (!(currentKeyframe && nextKeyframe)) {
+      continue;
+    }
 
     if (localFrame <= nextKeyframe.frame) {
       const segmentProgress = clampFrameProgress(

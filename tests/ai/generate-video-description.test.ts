@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { z } from "zod";
 
+import { PROMPT_TO_VIDEO_SYSTEM_PROMPT } from "@/lib/ai/prompt-to-video-config";
 import type { VideoDescription } from "@/lib/types/video";
+import { videoDescriptionSchema } from "@/lib/video/schema";
 
 const aiSdk = await import("ai");
 const { generateVideoDescriptionFromPrompt } = await import(
@@ -62,6 +65,22 @@ describe("generateVideoDescriptionFromPrompt", () => {
     });
 
     expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("uses a provider-compatible structured output schema", () => {
+    const jsonSchema = z.toJSONSchema(videoDescriptionSchema);
+    const serializedSchema = JSON.stringify(jsonSchema);
+
+    expect(serializedSchema.includes('"prefixItems"')).toBe(false);
+  });
+
+  it("documents pixel-based transform semantics for centered rotation prompts", () => {
+    expect(
+      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes("top-left pixel coordinates")
+    ).toBe(true);
+    expect(
+      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes("pixel offsets inside the node")
+    ).toBe(true);
   });
 
   it("uses the explicit gateway provider and returns the generated scene", async () => {

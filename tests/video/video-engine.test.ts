@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { z } from "zod";
 
 import { resolveFrame, resolveNodeTransform } from "@/lib/video/animation";
 import { sampleVideoDescription } from "@/lib/video/fixtures/sample-video-description";
@@ -22,16 +23,79 @@ describe("videoDescriptionSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects duplicate node ids within the same scene", () => {
+  it("requires at least one scene", () => {
+    const result = videoDescriptionSchema.safeParse({
+      ...sampleVideoDescription,
+      scenes: [],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("requires at least two keyframes for keyframe animations", () => {
     const result = videoDescriptionSchema.safeParse({
       ...sampleVideoDescription,
       scenes: [
         {
           ...sampleVideoDescription.scenes[0],
           nodes: [
-            sampleVideoDescription.scenes[0].nodes[0],
             {
-              ...sampleVideoDescription.scenes[0].nodes[0],
+              animations: [
+                {
+                  endFrame: 23,
+                  keyframes: [
+                    {
+                      frame: 0,
+                      value: 0,
+                    },
+                  ],
+                  property: "rotation",
+                  startFrame: 0,
+                  type: "keyframes",
+                },
+              ],
+              fill: "#38bdf8",
+              height: 48,
+              id: "accent-bar",
+              transform: {
+                x: 88,
+                y: 280,
+              },
+              type: "rect",
+              width: 180,
+            },
+          ],
+          startFrame: 0,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("serializes provider-compatible arrays without prefixItems", () => {
+    const jsonSchema = z.toJSONSchema(videoDescriptionSchema);
+    const serializedSchema = JSON.stringify(jsonSchema);
+
+    expect(serializedSchema.includes('"prefixItems"')).toBe(false);
+  });
+
+  it("rejects duplicate node ids within the same scene", () => {
+    const [introScene] = sampleVideoDescription.scenes;
+
+    if (!introScene) {
+      throw new Error("Sample fixture must include an intro scene.");
+    }
+
+    const result = videoDescriptionSchema.safeParse({
+      ...sampleVideoDescription,
+      scenes: [
+        {
+          ...introScene,
+          nodes: [
+            introScene.nodes[0],
+            {
+              ...introScene.nodes[0],
             },
           ],
         },
@@ -64,7 +128,18 @@ describe("timeline helpers", () => {
 
 describe("animation resolution", () => {
   it("resolves named effects and keyframes deterministically", () => {
-    const accentBarNode = sampleVideoDescription.scenes[0].nodes[2];
+    const [introScene] = sampleVideoDescription.scenes;
+
+    if (!introScene) {
+      throw new Error("Sample fixture must include an intro scene.");
+    }
+
+    const accentBarNode = introScene.nodes[2];
+
+    if (!accentBarNode) {
+      throw new Error("Sample fixture must include the accent bar node.");
+    }
+
     const resolvedTransform = resolveNodeTransform(accentBarNode, 12);
 
     expect(resolvedTransform.scaleX).toBeGreaterThan(0.95);

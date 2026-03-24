@@ -31,6 +31,10 @@ Follow these rules exactly:
 - Use hex colors for backgrounds, fills, strokes, and text.
 - Prefer rect and text compositions that can render without external assets.
 - Keep text concise. Headlines should usually be one short sentence or less.
+- "transform.x" and "transform.y" are top-left pixel coordinates for the node, not the node center.
+- "transform.anchorX" and "transform.anchorY" are pixel offsets inside the node, not normalized 0-to-1 values.
+- If a rect with width W and height H should rotate in place around its center, use "anchorX = W / 2" and "anchorY = H / 2".
+- If the user asks for an element in the center or centre of the frame, place the element so its visual center sits at the frame center.
 - Start the first scene at frame 0 and ensure later scenes begin when earlier scenes end.
 - Every animation frame window must fit inside its scene. If a scene lasts N frames, animation endFrame values must be less than N.
 - Never include commentary, markdown, or extra keys outside the schema.
