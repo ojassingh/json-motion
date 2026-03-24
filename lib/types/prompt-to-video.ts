@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { AppErrorResponse } from "@/lib/errors";
 import type { VideoDescription } from "@/lib/types/video";
 
 export const MAX_PROMPT_LENGTH = 600;
@@ -17,20 +18,6 @@ export const promptToVideoRequestSchema = z.object({
 
 export type PromptToVideoRequest = z.infer<typeof promptToVideoRequestSchema>;
 
-export type PromptToVideoErrorCode =
-  | "CONFIGURATION_ERROR"
-  | "GENERATION_ERROR"
-  | "RENDER_ERROR"
-  | "VALIDATION_ERROR";
-
-export interface PromptToVideoErrorResponse {
-  error: {
-    code: PromptToVideoErrorCode;
-    details: string[];
-    message: string;
-  };
-}
-
 export interface PromptToVideoRenderMetadata {
   codec: string;
   fps: number;
@@ -47,5 +34,5 @@ export interface PromptToVideoSuccessResponse {
 }
 
 export type PromptToVideoResponse =
-  | PromptToVideoErrorResponse
+  | AppErrorResponse
   | PromptToVideoSuccessResponse;
