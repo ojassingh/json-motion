@@ -1,8 +1,7 @@
 "use client";
 
-import { startTransition, useId, useState } from "react";
+import { useId, useState } from "react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,8 +11,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { AppError } from "@/lib/errors";
+import { handleError } from "@/lib/handle-error";
 import type {
-  PromptToVideoErrorResponse,
   PromptToVideoResponse,
   PromptToVideoSuccessResponse,
 } from "@/lib/types/prompt-to-video";
@@ -24,63 +24,44 @@ const SCENE_JSON_INDENTATION = 2;
 const GENERATED_VIDEO_CAPTIONS_TRACK =
   "data:text/vtt;charset=utf-8,WEBVTT%0A%0A00:00:00.000%20-->%2099:59:59.000%0ANo%20spoken%20audio.%0A";
 
-const createFallbackErrorResponse = (
-  message: string
-): PromptToVideoErrorResponse => ({
-  error: {
-    code: "GENERATION_ERROR",
-    details: [message],
-    message: "The request could not be completed.",
-  },
-});
-
-const getErrorDetails = (
-  errorResponse: PromptToVideoErrorResponse
-): string | null => {
-  if (errorResponse.error.details.length === 0) {
-    return null;
-  }
-
-  return errorResponse.error.details.join(" ");
-};
-
 const getPromptToVideoResponse = async (
   response: Response
-): Promise<PromptToVideoResponse> =>
-  (await response.json()) as PromptToVideoResponse;
+): Promise<PromptToVideoResponse> => {
+  try {
+    return (await response.json()) as PromptToVideoResponse;
+  } catch {
+    throw new AppError("INTERNAL_ERROR", {
+      message: "The server returned an invalid response.",
+    });
+  }
+};
 
 export function PromptToVideoPage() {
   const promptFieldId = useId();
   const promptHintId = useId();
-  const promptErrorId = useId();
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [latestPrompt, setLatestPrompt] = useState<string | null>(null);
   const [latestSuccess, setLatestSuccess] =
     useState<PromptToVideoSuccessResponse | null>(null);
-  const [errorResponse, setErrorResponse] =
-    useState<PromptToVideoErrorResponse | null>(null);
-
   const isPromptBlank = prompt.trim().length === 0;
-  const promptDescriptionIds = errorResponse
-    ? `${promptHintId} ${promptErrorId}`
-    : promptHintId;
 
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>
   ): Promise<void> => {
     event.preventDefault();
 
-    if (isPromptBlank || isSubmitting) {
+    const trimmedPrompt = prompt.trim();
+
+    if (trimmedPrompt.length === 0 || isSubmitting) {
       return;
     }
 
     setIsSubmitting(true);
-    setErrorResponse(null);
 
     try {
       const response = await fetch("/api/generate-video", {
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt: trimmedPrompt }),
         headers: {
           "content-type": "application/json",
         },
@@ -89,29 +70,14 @@ export function PromptToVideoPage() {
       const responseBody = await getPromptToVideoResponse(response);
 
       if ("error" in responseBody) {
-        startTransition(() => {
-          setErrorResponse(responseBody);
-        });
-
+        handleError(responseBody);
         return;
       }
 
-      startTransition(() => {
-        setErrorResponse(null);
-        setLatestPrompt(prompt.trim());
-        setLatestSuccess(responseBody);
-      });
+      setLatestPrompt(trimmedPrompt);
+      setLatestSuccess(responseBody);
     } catch (error) {
-      const fallbackErrorResponse =
-        error instanceof Error
-          ? createFallbackErrorResponse(error.message)
-          : createFallbackErrorResponse(
-              "Check your local server and try generating again."
-            );
-
-      startTransition(() => {
-        setErrorResponse(fallbackErrorResponse);
-      });
+      handleError(error);
     } finally {
       setIsSubmitting(false);
     }
@@ -159,8 +125,7 @@ export function PromptToVideoPage() {
                     Scene prompt
                   </label>
                   <Textarea
-                    aria-describedby={promptDescriptionIds}
-                    aria-invalid={errorResponse ? true : undefined}
+                    aria-describedby={promptHintId}
                     className="min-h-40 bg-background/80 text-sm"
                     disabled={isSubmitting}
                     id={promptFieldId}
@@ -181,20 +146,6 @@ export function PromptToVideoPage() {
                     <p>{prompt.trim().length}/600</p>
                   </div>
                 </div>
-
-                {errorResponse ? (
-                  <Alert
-                    className="border-destructive/30"
-                    id={promptErrorId}
-                    variant="destructive"
-                  >
-                    <AlertTitle>{errorResponse.error.message}</AlertTitle>
-                    <AlertDescription>
-                      {getErrorDetails(errorResponse) ??
-                        "Try tightening the prompt and submit again."}
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-muted-foreground text-xs/relaxed">
