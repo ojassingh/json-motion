@@ -1,5 +1,5 @@
 import { Canvas, type CanvasRenderingContext2D, type Image } from "skia-canvas";
-
+import { toAppError } from "@/lib/errors";
 import type {
   ResolvedFrame,
   ResolvedGroupNode,
@@ -12,7 +12,6 @@ import type {
 } from "@/lib/types/video";
 import { resolveFrame } from "@/lib/video/animation";
 import { loadVideoImage } from "@/lib/video/assets";
-import { VideoRenderError } from "@/lib/video/errors";
 
 const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
@@ -248,21 +247,8 @@ export const renderFrameToRgba = async (
 
     return canvas.toBufferSync("raw", { colorType: "rgba" });
   } catch (error) {
-    if (error instanceof VideoRenderError) {
-      throw error;
-    }
-
-    if (error instanceof Error) {
-      throw new VideoRenderError(
-        "RENDER_ERROR",
-        `Failed to rasterize frame ${absoluteFrame}.`,
-        { cause: error }
-      );
-    }
-
-    throw new VideoRenderError(
-      "RENDER_ERROR",
-      `Failed to rasterize frame ${absoluteFrame}.`
-    );
+    throw toAppError(error, "RENDER_ERROR", {
+      message: `Failed to rasterize frame ${absoluteFrame}.`,
+    });
   }
 };

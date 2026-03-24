@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { type Image, loadImage } from "skia-canvas";
 
+import { AppError, toAppError } from "@/lib/errors";
 import { PUBLIC_DIRECTORY_PATH } from "@/lib/video/config";
-import { VideoRenderError } from "@/lib/video/errors";
 
 const REMOTE_ASSET_PATTERN = /^https?:\/\//i;
 const imageCache = new Map<string, Promise<Image>>();
@@ -13,11 +13,10 @@ const resolveLocalAssetPath = (src: string): string => {
   const candidatePath = path.resolve(PUBLIC_DIRECTORY_PATH, `.${src}`);
 
   if (!candidatePath.startsWith(PUBLIC_DIRECTORY_PATH)) {
-    throw new VideoRenderError(
-      "ASSET_LOAD_ERROR",
-      `Image source "${src}" must stay within the public directory.`,
-      { status: 400 }
-    );
+    throw new AppError("ASSET_LOAD_ERROR", {
+      message: `Image source "${src}" must stay within the public directory.`,
+      status: 400,
+    });
   }
 
   return candidatePath;
@@ -40,21 +39,10 @@ const loadVideoImageInternal = async (src: string): Promise<Image> => {
 
     return await loadImage(src);
   } catch (error) {
-    if (error instanceof Error) {
-      throw new VideoRenderError(
-        "ASSET_LOAD_ERROR",
-        `Unable to load image asset "${src}".`,
-        { cause: error, status: 422 }
-      );
-    }
-
-    throw new VideoRenderError(
-      "ASSET_LOAD_ERROR",
-      `Unable to load image asset "${src}".`,
-      {
-        status: 422,
-      }
-    );
+    throw toAppError(error, "ASSET_LOAD_ERROR", {
+      message: `Unable to load image asset "${src}".`,
+      status: 422,
+    });
   }
 };
 

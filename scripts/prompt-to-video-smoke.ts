@@ -1,5 +1,5 @@
-import { generateVideoDescriptionFromPrompt } from "../lib/ai/generate-video-description-core";
-import { renderVideo } from "../lib/video/service";
+import { generateVideoDescriptionFromPrompt } from "../lib/ai/generate-video-description";
+import { renderVideo } from "../lib/video/render-video";
 
 const SAMPLE_PROMPT = "a simple square that fades in and turns round and round";
 

@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
+import { toAppError } from "@/lib/errors";
 import type { RenderOutputTarget } from "@/lib/types/video";
 import {
   PUBLIC_RENDER_DIRECTORY_PATH,
   PUBLIC_RENDER_URL_PREFIX,
 } from "@/lib/video/config";
-import { VideoRenderError } from "@/lib/video/errors";
 
 export const ensureRenderDirectory = async (): Promise<void> => {
   await mkdir(PUBLIC_RENDER_DIRECTORY_PATH, { recursive: true });
@@ -21,18 +21,9 @@ export const createRenderOutputTarget = async (
   try {
     await ensureRenderDirectory();
   } catch (error) {
-    if (error instanceof Error) {
-      throw new VideoRenderError(
-        "STORAGE_ERROR",
-        "Unable to prepare the local render directory.",
-        { cause: error }
-      );
-    }
-
-    throw new VideoRenderError(
-      "STORAGE_ERROR",
-      "Unable to prepare the local render directory."
-    );
+    throw toAppError(error, "STORAGE_ERROR", {
+      message: "Unable to prepare the local render directory.",
+    });
   }
 
   return {

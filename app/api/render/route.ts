@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
-  toVideoRenderErrorResponse,
-  VideoRenderError,
-} from "@/lib/video/errors";
-import { renderVideo } from "@/lib/video/service";
+  createValidationError,
+  toAppError,
+  toAppErrorResponse,
+} from "@/lib/errors";
+import { renderVideo } from "@/lib/video/render-video";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,27 +24,17 @@ export async function POST(request: Request): Promise<Response> {
       url: renderResult.publicUrl,
     });
   } catch (error) {
-    if (error instanceof VideoRenderError) {
-      return NextResponse.json(toVideoRenderErrorResponse(error), {
-        status: error.status,
-      });
-    }
+    const appError =
+      error instanceof SyntaxError
+        ? createValidationError("Render request validation failed.", [
+            "Request body must be valid JSON.",
+          ])
+        : toAppError(error, "INTERNAL_ERROR", {
+            message: "The render request failed unexpectedly.",
+          });
 
-    if (error instanceof Error) {
-      const renderError = new VideoRenderError("RENDER_ERROR", error.message);
-
-      return NextResponse.json(toVideoRenderErrorResponse(renderError), {
-        status: renderError.status,
-      });
-    }
-
-    const renderError = new VideoRenderError(
-      "RENDER_ERROR",
-      "The render request failed unexpectedly."
-    );
-
-    return NextResponse.json(toVideoRenderErrorResponse(renderError), {
-      status: renderError.status,
+    return NextResponse.json(toAppErrorResponse(appError), {
+      status: appError.status,
     });
   }
 }

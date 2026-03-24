@@ -1,3 +1,4 @@
+import { createValidationError } from "@/lib/errors";
 import type {
   RenderedVideoResult,
   RenderVideoOptions,
@@ -5,7 +6,6 @@ import type {
 } from "@/lib/types/video";
 import { getDefaultVideoCodec } from "@/lib/video/config";
 import { encodeVideoFrames } from "@/lib/video/encoder";
-import { VideoRenderError } from "@/lib/video/errors";
 import { renderFrameToRgba } from "@/lib/video/renderer";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 import {
@@ -31,15 +31,9 @@ export const renderVideo = async (
   const parsedVideoDescription = videoDescriptionSchema.safeParse(input);
 
   if (!parsedVideoDescription.success) {
-    throw new VideoRenderError(
-      "VALIDATION_ERROR",
+    throw createValidationError(
       "Render request validation failed.",
-      {
-        details: parsedVideoDescription.error.issues.map(
-          (issue) => issue.message
-        ),
-        status: 400,
-      }
+      parsedVideoDescription.error.issues.map((issue) => issue.message)
     );
   }
 

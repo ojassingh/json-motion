@@ -1,5 +1,5 @@
 import { sampleVideoDescription } from "../lib/video/fixtures/sample-video-description";
-import { renderVideo } from "../lib/video/service";
+import { renderVideo } from "../lib/video/render-video";
 
 const renderFixture = async (): Promise<void> => {
   const renderResult = await renderVideo(sampleVideoDescription);

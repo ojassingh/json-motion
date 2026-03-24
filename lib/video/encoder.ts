@@ -3,9 +3,9 @@ import { once } from "node:events";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
+import { AppError, toAppError } from "@/lib/errors";
 import type { VideoDescription } from "@/lib/types/video";
 import { FFMPEG_BINARY_PATH } from "@/lib/video/config";
-import { VideoRenderError } from "@/lib/video/errors";
 
 const writeFrame = async (
   stream: NodeJS.WritableStream,
@@ -59,17 +59,15 @@ export const encodeVideoFrames = async (
 
   const processErrorPromise = once(ffmpegProcess, "error").then(([error]) => {
     if (error instanceof Error) {
-      throw new VideoRenderError(
-        "DEPENDENCY_ERROR",
-        `Unable to start ffmpeg from "${FFMPEG_BINARY_PATH}".`,
-        { cause: error }
-      );
+      throw new AppError("DEPENDENCY_ERROR", {
+        cause: error,
+        message: `Unable to start ffmpeg from "${FFMPEG_BINARY_PATH}".`,
+      });
     }
 
-    throw new VideoRenderError(
-      "DEPENDENCY_ERROR",
-      `Unable to start ffmpeg from "${FFMPEG_BINARY_PATH}".`
-    );
+    throw new AppError("DEPENDENCY_ERROR", {
+      message: `Unable to start ffmpeg from "${FFMPEG_BINARY_PATH}".`,
+    });
   });
 
   try {
@@ -85,35 +83,19 @@ export const encodeVideoFrames = async (
     ])) as [number | null];
 
     if (exitCode !== 0) {
-      throw new VideoRenderError(
-        "ENCODER_ERROR",
-        "ffmpeg exited before the MP4 could be finalized.",
-        {
-          details: errorOutput
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean),
-        }
-      );
+      throw new AppError("ENCODER_ERROR", {
+        details: errorOutput
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+        message: "ffmpeg exited before the MP4 could be finalized.",
+      });
     }
   } catch (error) {
     ffmpegProcess.kill("SIGKILL");
 
-    if (error instanceof VideoRenderError) {
-      throw error;
-    }
-
-    if (error instanceof Error) {
-      throw new VideoRenderError(
-        "ENCODER_ERROR",
-        "The encoder failed while streaming video frames.",
-        { cause: error }
-      );
-    }
-
-    throw new VideoRenderError(
-      "ENCODER_ERROR",
-      "The encoder failed while streaming video frames."
-    );
+    throw toAppError(error, "ENCODER_ERROR", {
+      message: "The encoder failed while streaming video frames.",
+    });
   }
 };
