@@ -1,0 +1,23 @@
+import { generateVideoDescriptionFromPrompt } from "../lib/ai/generate-video-description";
+import { renderVideo } from "../lib/video/render-video";
+
+const SAMPLE_PROMPT = "a simple square that fades in and turns round and round";
+
+const runPromptToVideoSmoke = async (): Promise<void> => {
+  console.log(`Prompt: ${SAMPLE_PROMPT}`);
+
+  const scene = await generateVideoDescriptionFromPrompt(SAMPLE_PROMPT);
+
+  console.log("Generated scene:");
+  console.log(JSON.stringify(scene, null, 2));
+
+  const renderResult = await renderVideo(scene);
+
+  console.log(`Rendered video to ${renderResult.filePath}`);
+
+  if (renderResult.publicUrl) {
+    console.log(`Open ${renderResult.publicUrl} to preview the MP4.`);
+  }
+};
+
+await runPromptToVideoSmoke();
