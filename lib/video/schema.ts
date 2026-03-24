@@ -2,8 +2,11 @@ import { z } from "zod";
 
 import type {
   NumericAnimationProperty,
+  VideoDescription,
   VideoGroupNode,
+  VideoKeyframeAnimation,
   VideoNode,
+  VideoScene,
 } from "@/lib/types/video";
 import { collectVideoValidationIssues } from "@/lib/video/validation";
 
@@ -47,14 +50,17 @@ const keyframePointSchema = z.object({
   value: z.number().finite(),
 });
 
-const videoKeyframeAnimationSchema = z.object({
-  easing: z.enum(easingValues).optional(),
-  endFrame: frameSchema,
-  keyframes: z.array(keyframePointSchema).min(2),
-  property: z.enum(numericAnimationPropertyValues),
-  startFrame: frameSchema,
-  type: z.literal("keyframes"),
-});
+const videoKeyframeAnimationSchema: z.ZodType<VideoKeyframeAnimation> =
+  z.object({
+    easing: z.enum(easingValues).optional(),
+    endFrame: frameSchema,
+    keyframes: z
+      .tuple([keyframePointSchema, keyframePointSchema])
+      .rest(keyframePointSchema),
+    property: z.enum(numericAnimationPropertyValues),
+    startFrame: frameSchema,
+    type: z.literal("keyframes"),
+  });
 
 const videoFadeInEffectSchema = z.object({
   easing: z.enum(easingValues).optional(),
@@ -151,7 +157,7 @@ const videoImageNodeSchema = videoNodeBaseSchema.extend({
   width: z.number().positive(),
 });
 
-const videoSceneSchema = z.object({
+const videoSceneSchema: z.ZodType<VideoScene> = z.object({
   background: z.string().trim().min(1).optional(),
   durationInFrames: z.number().int().positive(),
   id: idSchema,
@@ -159,12 +165,12 @@ const videoSceneSchema = z.object({
   startFrame: frameSchema,
 });
 
-export const videoDescriptionSchema = z
+export const videoDescriptionSchema: z.ZodType<VideoDescription> = z
   .object({
     background: z.string().trim().min(1).optional(),
     fps: z.number().positive(),
     height: z.number().int().positive(),
-    scenes: z.array(videoSceneSchema).min(1),
+    scenes: z.tuple([videoSceneSchema]).rest(videoSceneSchema),
     width: z.number().int().positive(),
   })
   .superRefine((videoDescription, ctx) => {
