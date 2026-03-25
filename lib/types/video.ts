@@ -1,167 +1,61 @@
-export type VideoColor =
-  | `#${string}`
-  | `rgb(${string})`
-  | `rgba(${string})`
-  | `hsl(${string})`
-  | `hsla(${string})`
-  | string;
+import type { z } from "zod";
 
-export type VideoEasingName = "ease-in" | "ease-in-out" | "ease-out" | "linear";
+import type {
+  videoAnchorSchema,
+  videoColorAnimationValueSchema,
+  videoDescriptionSchema,
+  videoEasingSchema,
+  videoHexColorSchema,
+  videoImageFitSchema,
+  videoNodeSchema,
+  videoNumericAnimationValueSchema,
+  videoPrimitiveSchema,
+  videoSceneSchema,
+  videoTextAlignSchema,
+  videoTimeSchema,
+} from "@/lib/video/schema";
 
-export type VideoEffectName = "fade-in" | "scale-in" | "slide-in";
+export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
+export type VideoColor = z.infer<typeof videoHexColorSchema>;
+export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
+export type VideoEasingName = z.infer<typeof videoEasingSchema>;
+export type VideoImageFit = z.infer<typeof videoImageFitSchema>;
+export type VideoNode = z.infer<typeof videoNodeSchema>;
+export type VideoPrimitive = z.infer<typeof videoPrimitiveSchema>;
+export type VideoColorAnimationValue = z.infer<
+  typeof videoColorAnimationValueSchema
+>;
+export type VideoNumericAnimationValue = z.infer<
+  typeof videoNumericAnimationValueSchema
+>;
+type ExtractAnimationStep<TValue> =
+  TValue extends Array<infer TStep> ? TStep : TValue;
+export type VideoColorAnimationStep =
+  ExtractAnimationStep<VideoColorAnimationValue>;
+export type VideoNumericAnimationStep =
+  ExtractAnimationStep<VideoNumericAnimationValue>;
+export type VideoScene = z.infer<typeof videoSceneSchema>;
+export type VideoTextAlign = z.infer<typeof videoTextAlignSchema>;
+export type VideoTimeValue = z.infer<typeof videoTimeSchema>;
 
-export type VideoImageFit = "contain" | "cover" | "fill";
+export type VideoGroupNode = Extract<VideoNode, { type: "group" }>;
+export type VideoImageNode = Extract<VideoNode, { type: "image" }>;
+export type VideoRectNode = Extract<VideoNode, { type: "rect" }>;
+export type VideoTextNode = Extract<VideoNode, { type: "text" }>;
 
-export type VideoTextAlign = "center" | "left" | "right";
-
-export type NumericAnimationProperty =
-  | "anchorX"
-  | "anchorY"
-  | "opacity"
-  | "rotation"
-  | "scaleX"
-  | "scaleY"
-  | "skewX"
-  | "skewY"
-  | "x"
-  | "y";
-
-export interface VideoNodeTransform {
-  anchorX: number;
-  anchorY: number;
+export interface ResolvedNodeBase {
+  anchor: VideoAnchor;
+  id: string;
   opacity: number;
   rotation: number;
   scaleX: number;
   scaleY: number;
   skewX: number;
   skewY: number;
+  sourceIndex: number;
   x: number;
   y: number;
   zIndex: number;
-}
-
-export type VideoNodeTransformInput = Partial<VideoNodeTransform>;
-
-export interface VideoKeyframePoint {
-  frame: number;
-  value: number;
-}
-
-export interface VideoKeyframeAnimation {
-  easing?: VideoEasingName;
-  endFrame: number;
-  keyframes: VideoKeyframePoint[];
-  property: NumericAnimationProperty;
-  startFrame: number;
-  type: "keyframes";
-}
-
-export interface VideoFadeInEffect {
-  easing?: VideoEasingName;
-  endFrame: number;
-  fromOpacity?: number;
-  name: "fade-in";
-  startFrame: number;
-  type: "effect";
-}
-
-export interface VideoScaleInEffect {
-  easing?: VideoEasingName;
-  endFrame: number;
-  fromScale?: number;
-  name: "scale-in";
-  startFrame: number;
-  type: "effect";
-}
-
-export interface VideoSlideInEffect {
-  easing?: VideoEasingName;
-  endFrame: number;
-  fromX?: number;
-  fromY?: number;
-  name: "slide-in";
-  startFrame: number;
-  type: "effect";
-}
-
-export type VideoNodeAnimation =
-  | VideoFadeInEffect
-  | VideoKeyframeAnimation
-  | VideoScaleInEffect
-  | VideoSlideInEffect;
-
-export interface VideoNodeBase {
-  animations?: VideoNodeAnimation[];
-  id: string;
-  transform?: VideoNodeTransformInput;
-}
-
-export interface VideoGroupNode extends VideoNodeBase {
-  children: VideoNode[];
-  type: "group";
-}
-
-export interface VideoRectNode extends VideoNodeBase {
-  fill?: VideoColor;
-  height: number;
-  radius?: number;
-  stroke?: VideoColor;
-  strokeWidth?: number;
-  type: "rect";
-  width: number;
-}
-
-export interface VideoTextNode extends VideoNodeBase {
-  color?: VideoColor;
-  fontFamily?: string;
-  fontSize?: number;
-  fontWeight?: number | string;
-  lineHeight?: number;
-  maxWidth?: number;
-  text: string;
-  textAlign?: VideoTextAlign;
-  type: "text";
-}
-
-export interface VideoImageNode extends VideoNodeBase {
-  fit?: VideoImageFit;
-  height: number;
-  src: string;
-  type: "image";
-  width: number;
-}
-
-export type VideoNode =
-  | VideoGroupNode
-  | VideoImageNode
-  | VideoRectNode
-  | VideoTextNode;
-
-export interface VideoScene {
-  background?: VideoColor;
-  durationInFrames: number;
-  id: string;
-  nodes: VideoNode[];
-  startFrame: number;
-}
-
-export interface VideoDescription {
-  background?: VideoColor;
-  fps: number;
-  height: number;
-  scenes: VideoScene[];
-  width: number;
-}
-
-export interface ResolvedNodeTransform extends VideoNodeTransform {
-  animatedX: number;
-  animatedY: number;
-}
-
-export interface ResolvedNodeBase {
-  id: string;
-  sourceIndex: number;
-  transform: ResolvedNodeTransform;
 }
 
 export interface ResolvedGroupNode extends ResolvedNodeBase {

@@ -1,71 +1,180 @@
 import type {
+  VideoColorAnimationValue,
   VideoDescription,
-  VideoKeyframeAnimation,
   VideoNode,
-  VideoNodeAnimation,
+  VideoNumericAnimationValue,
   VideoScene,
 } from "@/lib/types/video";
+import {
+  normalizeColorAnimationValue,
+  normalizeNumericAnimationValue,
+} from "@/lib/video/animation";
 
 export interface VideoValidationIssue {
   message: string;
   path: Array<number | string>;
 }
 
-const validateAnimationWindow = (
-  animation: VideoNodeAnimation,
+const collectAnimationWindowIssues = (
   scene: VideoScene,
-  path: Array<number | string>
+  path: Array<number | string>,
+  animationSteps:
+    | ReturnType<typeof normalizeColorAnimationValue>
+    | ReturnType<typeof normalizeNumericAnimationValue>
 ): VideoValidationIssue[] => {
   const issues: VideoValidationIssue[] = [];
+  let previousEndFrame = -1;
 
-  if (animation.startFrame > animation.endFrame) {
-    issues.push({
-      message: "Animation startFrame must be less than or equal to endFrame.",
-      path: [...path, "startFrame"],
-    });
-  }
+  for (const [index, step] of animationSteps.entries()) {
+    if (step.startFrame > step.endFrame) {
+      issues.push({
+        message: "Animation start must be less than or equal to end.",
+        path: [...path, index, "start"],
+      });
+    }
 
-  if (
-    animation.startFrame < 0 ||
-    animation.endFrame >= scene.durationInFrames
-  ) {
-    issues.push({
-      message:
-        "Animation frame window must fit within the containing scene duration.",
-      path: [...path, "endFrame"],
-    });
+    if (step.endFrame >= scene.duration) {
+      issues.push({
+        message:
+          "Animation frame window must fit within the containing scene duration.",
+        path: [...path, index, "end"],
+      });
+    }
+
+    if (step.startFrame <= previousEndFrame) {
+      issues.push({
+        message:
+          "Animation steps for a property must be ordered and non-overlapping.",
+        path: [...path, index, "start"],
+      });
+    }
+
+    previousEndFrame = step.endFrame;
   }
 
   return issues;
 };
 
-const validateKeyframeAnimation = (
-  animation: VideoKeyframeAnimation,
+const collectNumericAnimationIssues = (
+  scene: VideoScene,
+  path: Array<number | string>,
+  value: VideoNumericAnimationValue | undefined,
+  fps: number
+): VideoValidationIssue[] =>
+  value
+    ? collectAnimationWindowIssues(
+        scene,
+        path,
+        normalizeNumericAnimationValue(value, fps)
+      )
+    : [];
+
+const collectColorAnimationIssues = (
+  scene: VideoScene,
+  path: Array<number | string>,
+  value: VideoColorAnimationValue | undefined,
+  fps: number
+): VideoValidationIssue[] =>
+  value
+    ? collectAnimationWindowIssues(
+        scene,
+        path,
+        normalizeColorAnimationValue(value, fps)
+      )
+    : [];
+
+const appendNumericAnimationIssues = (
+  issues: VideoValidationIssue[],
+  scene: VideoScene,
+  fps: number,
+  path: Array<number | string>,
+  entries: Array<{
+    name: string;
+    value: VideoNumericAnimationValue | undefined;
+  }>
+): void => {
+  for (const entry of entries) {
+    issues.push(
+      ...collectNumericAnimationIssues(
+        scene,
+        [...path, entry.name],
+        entry.value,
+        fps
+      )
+    );
+  }
+};
+
+const appendColorAnimationIssues = (
+  issues: VideoValidationIssue[],
+  scene: VideoScene,
+  fps: number,
+  path: Array<number | string>,
+  entries: Array<{
+    name: string;
+    value: VideoColorAnimationValue | undefined;
+  }>
+): void => {
+  for (const entry of entries) {
+    issues.push(
+      ...collectColorAnimationIssues(
+        scene,
+        [...path, entry.name],
+        entry.value,
+        fps
+      )
+    );
+  }
+};
+
+const collectNodeAnimationIssues = (
+  node: VideoNode,
+  scene: VideoScene,
+  fps: number,
   path: Array<number | string>
 ): VideoValidationIssue[] => {
   const issues: VideoValidationIssue[] = [];
+  const animatePath = [...path, "animate"];
 
-  let previousFrame = -1;
+  appendNumericAnimationIssues(issues, scene, fps, animatePath, [
+    { name: "opacity", value: node.animate?.opacity },
+    { name: "rotate", value: node.animate?.rotate },
+    { name: "scale", value: node.animate?.scale },
+    { name: "scaleX", value: node.animate?.scaleX },
+    { name: "scaleY", value: node.animate?.scaleY },
+    { name: "skewX", value: node.animate?.skewX },
+    { name: "skewY", value: node.animate?.skewY },
+    { name: "x", value: node.animate?.x },
+    { name: "y", value: node.animate?.y },
+  ]);
 
-  for (const [index, keyframe] of animation.keyframes.entries()) {
-    if (
-      keyframe.frame < animation.startFrame ||
-      keyframe.frame > animation.endFrame
-    ) {
-      issues.push({
-        message: "Keyframe frames must remain inside the animation window.",
-        path: [...path, "keyframes", index, "frame"],
-      });
-    }
+  if (node.type === "rect") {
+    appendNumericAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "cornerRadius", value: node.animate?.cornerRadius },
+      { name: "height", value: node.animate?.height },
+      { name: "strokeWidth", value: node.animate?.strokeWidth },
+      { name: "width", value: node.animate?.width },
+    ]);
+    appendColorAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "fill", value: node.animate?.fill },
+      { name: "stroke", value: node.animate?.stroke },
+    ]);
+  }
 
-    if (keyframe.frame < previousFrame) {
-      issues.push({
-        message: "Keyframes must be sorted in ascending frame order.",
-        path: [...path, "keyframes", index, "frame"],
-      });
-    }
+  if (node.type === "text") {
+    appendNumericAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "size", value: node.animate?.size },
+    ]);
+    appendColorAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "color", value: node.animate?.color },
+    ]);
+  }
 
-    previousFrame = keyframe.frame;
+  if (node.type === "image") {
+    appendNumericAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "height", value: node.animate?.height },
+      { name: "width", value: node.animate?.width },
+    ]);
   }
 
   return issues;
@@ -74,6 +183,7 @@ const validateKeyframeAnimation = (
 const collectNodeValidationIssues = (
   node: VideoNode,
   scene: VideoScene,
+  fps: number,
   path: Array<number | string>,
   seenIds: Set<string>
 ): VideoValidationIssue[] => {
@@ -88,15 +198,7 @@ const collectNodeValidationIssues = (
     seenIds.add(node.id);
   }
 
-  for (const [animationIndex, animation] of (node.animations ?? []).entries()) {
-    const animationPath = [...path, "animations", animationIndex];
-
-    issues.push(...validateAnimationWindow(animation, scene, animationPath));
-
-    if (animation.type === "keyframes") {
-      issues.push(...validateKeyframeAnimation(animation, animationPath));
-    }
-  }
+  issues.push(...collectNodeAnimationIssues(node, scene, fps, path));
 
   if (node.type === "group") {
     for (const [childIndex, childNode] of node.children.entries()) {
@@ -104,6 +206,7 @@ const collectNodeValidationIssues = (
         ...collectNodeValidationIssues(
           childNode,
           scene,
+          fps,
           [...path, "children", childIndex],
           seenIds
         )
@@ -129,7 +232,18 @@ export const collectVideoValidationIssues = (
       });
     }
 
-    previousSceneEnd = scene.startFrame + scene.durationInFrames - 1;
+    previousSceneEnd = scene.startFrame + scene.duration - 1;
+
+    if (scene.background && typeof scene.background !== "string") {
+      issues.push(
+        ...collectColorAnimationIssues(
+          scene,
+          ["scenes", sceneIndex, "background"],
+          scene.background,
+          videoDescription.fps
+        )
+      );
+    }
 
     const seenIds = new Set<string>();
 
@@ -138,6 +252,7 @@ export const collectVideoValidationIssues = (
         ...collectNodeValidationIssues(
           node,
           scene,
+          videoDescription.fps,
           ["scenes", sceneIndex, "nodes", nodeIndex],
           seenIds
         )

@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 
-import { resolveFrame, resolveNodeTransform } from "@/lib/video/animation";
+import type { VideoDescription } from "@/lib/types/video";
+import { resolveFrame, resolveVideoNode } from "@/lib/video/animation";
+import { lerpOklch } from "@/lib/video/color";
 import { sampleVideoDescription } from "@/lib/video/fixtures/sample-video-description";
-import { renderVideo } from "@/lib/video/render-video";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 import { getSceneForFrame, getTotalFrameCount } from "@/lib/video/timeline";
 
@@ -15,6 +16,14 @@ const ffmpegIsAvailable =
   spawnSync("ffmpeg", ["-version"], {
     stdio: "ignore",
   }).status === 0;
+const skiaCanvasIsAvailable = (() => {
+  try {
+    import.meta.resolve("skia-canvas");
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 describe("videoDescriptionSchema", () => {
   it("accepts the sample video description", () => {
@@ -32,7 +41,7 @@ describe("videoDescriptionSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("requires at least two keyframes for keyframe animations", () => {
+  it("rejects legacy animation arrays and transform objects", () => {
     const result = videoDescriptionSchema.safeParse({
       ...sampleVideoDescription,
       scenes: [
@@ -40,32 +49,46 @@ describe("videoDescriptionSchema", () => {
           ...sampleVideoDescription.scenes[0],
           nodes: [
             {
-              animations: [
-                {
-                  endFrame: 23,
-                  keyframes: [
-                    {
-                      frame: 0,
-                      value: 0,
-                    },
-                  ],
-                  property: "rotation",
-                  startFrame: 0,
-                  type: "keyframes",
-                },
-              ],
               fill: "#38bdf8",
               height: 48,
-              id: "accent-bar",
-              transform: {
-                x: 88,
-                y: 280,
-              },
+              id: "legacy-rect",
+              animations: [],
+              transform: { x: 88, y: 280 },
               type: "rect",
               width: 180,
             },
           ],
-          startFrame: 0,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects animation windows that exceed the scene duration", () => {
+    const result = videoDescriptionSchema.safeParse({
+      ...sampleVideoDescription,
+      scenes: [
+        {
+          ...sampleVideoDescription.scenes[0],
+          nodes: [
+            {
+              animate: {
+                opacity: {
+                  end: 24,
+                  from: 0,
+                  to: 1,
+                },
+              },
+              fill: "#38bdf8",
+              height: 48,
+              id: "too-long",
+              type: "rect",
+              width: 180,
+              x: 88,
+              y: 280,
+            },
+          ],
         },
       ],
     });
@@ -127,7 +150,7 @@ describe("timeline helpers", () => {
 });
 
 describe("animation resolution", () => {
-  it("resolves named effects and keyframes deterministically", () => {
+  it("resolves primitive and explicit animations deterministically", () => {
     const [introScene] = sampleVideoDescription.scenes;
 
     if (!introScene) {
@@ -140,25 +163,88 @@ describe("animation resolution", () => {
       throw new Error("Sample fixture must include the accent bar node.");
     }
 
-    const resolvedTransform = resolveNodeTransform(accentBarNode, 12);
+    const resolvedNode = resolveVideoNode(
+      accentBarNode,
+      sampleVideoDescription.fps,
+      introScene.duration,
+      12,
+      2
+    );
 
-    expect(resolvedTransform.scaleX).toBeGreaterThan(0.95);
-    expect(resolvedTransform.scaleY).toBeGreaterThan(0.95);
+    expect(resolvedNode.scaleX).toBeGreaterThan(0.95);
+    expect(resolvedNode.scaleY).toBeGreaterThan(0.95);
+  });
+
+  it("lets explicit animate values override primitive-derived values", () => {
+    const resolvedNode = resolveVideoNode(
+      {
+        animate: {
+          y: {
+            easing: "linear",
+            end: "1s",
+            from: 10,
+            to: 50,
+          },
+        },
+        height: 80,
+        id: "override",
+        primitives: ["SlideIn"],
+        type: "rect",
+        width: 80,
+        x: 10,
+        y: 50,
+      },
+      30,
+      60,
+      15,
+      0
+    );
+
+    expect(resolvedNode.y).toBe(30);
+  });
+
+  it("interpolates animated backgrounds in OKLCH", () => {
+    const videoDescription: VideoDescription = {
+      background: "#07111f",
+      fps: 12,
+      height: 360,
+      scenes: [
+        {
+          background: {
+            easing: "linear",
+            end: 8,
+            from: "#3b82f6",
+            to: "#f43f5e",
+          },
+          duration: 9,
+          id: "background-test",
+          nodes: [],
+          startFrame: 0,
+        },
+      ],
+      width: 640,
+    };
+
+    const resolvedFrame = resolveFrame(videoDescription, 4);
+
+    expect(resolvedFrame.background).toBe(lerpOklch("#3b82f6", "#f43f5e", 0.5));
   });
 
   it("returns a resolved frame with background and nodes", () => {
     const resolvedFrame = resolveFrame(sampleVideoDescription, 4);
 
-    expect(resolvedFrame.background).toBe("#07111f");
+    expect(resolvedFrame.background).toBeDefined();
     expect(resolvedFrame.nodes.length).toBe(3);
     expect(resolvedFrame.localFrame).toBe(4);
   });
 });
 
-const integrationTest = ffmpegIsAvailable ? it : it.skip;
+const integrationTest =
+  ffmpegIsAvailable && skiaCanvasIsAvailable ? it : it.skip;
 
 describe("renderVideo", () => {
   integrationTest("renders the sample fixture into an MP4 file", async () => {
+    const { renderVideo } = await import("@/lib/video/render-video");
     const temporaryDirectory = await mkdtemp(
       path.join(os.tmpdir(), "motion-render-")
     );

@@ -4,7 +4,6 @@ import type {
   ResolvedFrame,
   ResolvedGroupNode,
   ResolvedImageNode,
-  ResolvedNodeTransform,
   ResolvedRectNode,
   ResolvedTextNode,
   ResolvedVideoNode,
@@ -15,29 +14,94 @@ import { loadVideoImage } from "@/lib/video/assets";
 
 const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
+const getNodeDimensions = (
+  node: ResolvedVideoNode
+): {
+  height: number;
+  width: number;
+} => {
+  if (node.type === "rect" || node.type === "image") {
+    return {
+      height: node.height,
+      width: node.width,
+    };
+  }
+
+  if (node.type === "text") {
+    return {
+      height: node.lineHeight * node.text.split("\n").length,
+      width: node.maxWidth ?? 0,
+    };
+  }
+
+  return {
+    height: 0,
+    width: 0,
+  };
+};
+
+const getAnchorOffset = (
+  node: ResolvedVideoNode
+): {
+  x: number;
+  y: number;
+} => {
+  const { height, width } = getNodeDimensions(node);
+
+  if (node.anchor === "top-left") {
+    return { x: 0, y: 0 };
+  }
+
+  if (node.anchor === "top-center") {
+    return { x: width / 2, y: 0 };
+  }
+
+  if (node.anchor === "top-right") {
+    return { x: width, y: 0 };
+  }
+
+  if (node.anchor === "center-left") {
+    return { x: 0, y: height / 2 };
+  }
+
+  if (node.anchor === "center") {
+    return { x: width / 2, y: height / 2 };
+  }
+
+  if (node.anchor === "center-right") {
+    return { x: width, y: height / 2 };
+  }
+
+  if (node.anchor === "bottom-left") {
+    return { x: 0, y: height };
+  }
+
+  if (node.anchor === "bottom-center") {
+    return { x: width / 2, y: height };
+  }
+
+  return { x: width, y: height };
+};
+
 const applyNodeTransform = (
   context: CanvasRenderingContext2D,
-  transform: ResolvedNodeTransform
+  node: ResolvedVideoNode
 ): void => {
-  context.translate(
-    transform.x + transform.anchorX,
-    transform.y + transform.anchorY
-  );
-  context.rotate(degreesToRadians(transform.rotation));
-  context.scale(transform.scaleX, transform.scaleY);
+  const anchorOffset = getAnchorOffset(node);
+
+  context.translate(node.x + anchorOffset.x, node.y + anchorOffset.y);
+  context.rotate(degreesToRadians(node.rotation));
+  context.scale(node.scaleX, node.scaleY);
   context.transform(
     1,
-    Math.tan(degreesToRadians(transform.skewY)),
-    Math.tan(degreesToRadians(transform.skewX)),
+    Math.tan(degreesToRadians(node.skewY)),
+    Math.tan(degreesToRadians(node.skewX)),
     1,
     0,
     0
   );
-  context.translate(
-    -transform.anchorX + transform.animatedX,
-    -transform.anchorY + transform.animatedY
-  );
-  context.globalAlpha *= transform.opacity;
+  context.translate(-anchorOffset.x, -anchorOffset.y);
+  context.globalAlpha *= node.opacity;
 };
 
 const drawRoundedRect = (
@@ -183,7 +247,7 @@ const drawResolvedNode = async (
   node: ResolvedVideoNode
 ): Promise<void> => {
   context.save();
-  applyNodeTransform(context, node.transform);
+  applyNodeTransform(context, node);
 
   try {
     if (node.type === "group") {
