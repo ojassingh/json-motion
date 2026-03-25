@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.48",
+    "mathjax-full": "^3.2.2",
+    "mathjs": "^14.5.2",
     "@base-ui/react": "^1.3.0",
     "ai": "^6.0.137",
     "class-variance-authority": "^0.7.1",

@@ -1,19 +1,4 @@
-# prompt-to-video-api Specification
-
-## Purpose
-TBD - created by archiving change fix-ai-gateway-structured-output-schema. Update Purpose after archive.
-## Requirements
-### Requirement: Prompt generation produces a schema-valid video description
-The prompt-to-video endpoint SHALL use AI SDK structured output to generate a
-`VideoDescription` that conforms to the existing video scene schema, and the
-provider-facing structured-output schema SHALL remain compatible with the
-Gateway transport used by the generation layer.
-
-#### Scenario: Structured output schema is accepted by the provider path
-- **WHEN** the prompt generation module serializes the `VideoDescription`
-  schema for structured output
-- **THEN** the provider-facing schema avoids tuple-style array constructs that
-  break the Gateway request before generation begins
+## MODIFIED Requirements
 
 ### Requirement: The AI system prompt documents all supported node types and their properties
 The system prompt SHALL list all supported node types including `math`, `functionGraph`, and `parametricGraph` alongside `group`, `rect`, and `text`. For each new node type, the prompt SHALL describe the required and optional properties, provide usage guidance, and include constraints (e.g., math nodes require valid LaTeX, graph expressions use mathjs syntax). The prompt SHALL instruct the model to use `math` nodes for equations and mathematical notation, `functionGraph` for y=f(x) curves, and `parametricGraph` for parametric curves.
