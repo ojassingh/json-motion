@@ -1,4 +1,6 @@
 import type {
+  ResolvedAlignNode,
+  ResolvedCenterNode,
   ResolvedFrame,
   ResolvedFunctionGraphNode,
   ResolvedGroupNode,
@@ -6,8 +8,11 @@ import type {
   ResolvedMathNode,
   ResolvedParametricGraphNode,
   ResolvedRectNode,
+  ResolvedStackNode,
   ResolvedTextNode,
   ResolvedVideoNode,
+  VideoAlignNode,
+  VideoCenterNode,
   VideoColor,
   VideoColorAnimationStep,
   VideoColorAnimationValue,
@@ -23,6 +28,7 @@ import type {
   VideoParametricGraphNode,
   VideoRectNode,
   VideoScene,
+  VideoStackNode,
   VideoTextNode,
   VideoTimeValue,
 } from "@/lib/types/video";
@@ -34,6 +40,7 @@ import {
   DEFAULT_TEXT_FONT_SIZE,
   DEFAULT_TEXT_LINE_HEIGHT_MULTIPLIER,
 } from "@/lib/video/config";
+import { resolveLayout } from "@/lib/video/layout";
 import {
   createEmptyResolvedFrame,
   getSceneForFrame,
@@ -42,6 +49,7 @@ import {
 
 type ColorAnimationProperty = "background" | "color" | "fill" | "stroke";
 type NumericAnimationProperty =
+  | "blur"
   | "drawProgress"
   | "fontSize"
   | "height"
@@ -186,6 +194,7 @@ const getBaseNodeValues = (node: VideoNode) => {
 
   return {
     anchor: node.anchor ?? "center",
+    blur: 0,
     opacity: node.opacity ?? 1,
     rotation: node.rotate ?? 0,
     scaleX: node.scaleX ?? uniformScale,
@@ -317,6 +326,37 @@ const getPrimitiveNumericEntries = (
   segments: NormalizedAnimationSegment<number>[];
 }> => {
   const lastFrame = sceneDuration - 1;
+
+  if (primitive === "BlurFadeIn") {
+    return [
+      {
+        property: "opacity",
+        segments: filterValidSegments([
+          createPrimitiveSegment(
+            0,
+            baseValues.opacity,
+            0,
+            DEFAULT_ENTER_DURATION - 1,
+            sceneDuration,
+            "ease-out"
+          ),
+        ]),
+      },
+      {
+        property: "blur",
+        segments: filterValidSegments([
+          createPrimitiveSegment(
+            8,
+            0,
+            0,
+            DEFAULT_ENTER_DURATION - 1,
+            sceneDuration,
+            "ease-out"
+          ),
+        ]),
+      },
+    ];
+  }
 
   if (primitive === "FadeIn") {
     return [
@@ -812,6 +852,11 @@ const resolveBaseNode = (
 
   return {
     anchor: baseValues.anchor,
+    blur: resolveAnimatedNumericValue(
+      baseValues.blur,
+      animations.numbers.blur,
+      localFrame
+    ),
     id: node.id,
     opacity: resolveAnimatedNumericValue(
       baseValues.opacity,
@@ -858,6 +903,18 @@ const resolveBaseNode = (
   };
 };
 
+const resolveChildNodes = (
+  children: VideoNode[],
+  fps: number,
+  sceneDuration: number,
+  localFrame: number
+): ResolvedVideoNode[] =>
+  sortResolvedNodes(
+    children.map((childNode, childIndex) =>
+      resolveVideoNode(childNode, fps, sceneDuration, localFrame, childIndex)
+    )
+  );
+
 const resolveGroupNode = (
   node: VideoGroupNode,
   fps: number,
@@ -866,12 +923,44 @@ const resolveGroupNode = (
   sourceIndex: number
 ): ResolvedGroupNode => ({
   ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
-  children: sortResolvedNodes(
-    node.children.map((childNode: VideoNode, childIndex: number) =>
-      resolveVideoNode(childNode, fps, sceneDuration, localFrame, childIndex)
-    )
-  ),
+  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
   type: "group",
+});
+
+const resolveCenterNode = (
+  node: VideoCenterNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number
+): ResolvedCenterNode => ({
+  ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  type: "center",
+});
+
+const resolveStackNode = (
+  node: VideoStackNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number
+): ResolvedStackNode => ({
+  ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  type: "stack",
+});
+
+const resolveAlignNode = (
+  node: VideoAlignNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number
+): ResolvedAlignNode => ({
+  ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  type: "align",
 });
 
 const resolveRectNode = (
@@ -1090,6 +1179,18 @@ export const resolveVideoNode = (
     return resolveGroupNode(node, fps, sceneDuration, localFrame, sourceIndex);
   }
 
+  if (node.type === "center") {
+    return resolveCenterNode(node, fps, sceneDuration, localFrame, sourceIndex);
+  }
+
+  if (node.type === "stack") {
+    return resolveStackNode(node, fps, sceneDuration, localFrame, sourceIndex);
+  }
+
+  if (node.type === "align") {
+    return resolveAlignNode(node, fps, sceneDuration, localFrame, sourceIndex);
+  }
+
   if (node.type === "rect") {
     return resolveRectNode(node, fps, sceneDuration, localFrame, sourceIndex);
   }
@@ -1162,12 +1263,18 @@ export const resolveFrame = (
   }
 
   const localFrame = getSceneLocalFrame(scene, absoluteFrame);
+  const layoutNodes = resolveLayout(
+    scene.nodes,
+    videoDescription.width,
+    videoDescription.height
+  );
+  const sceneWithLayout = { ...scene, nodes: layoutNodes };
 
   return {
     absoluteFrame,
     background: resolveSceneBackground(videoDescription, scene, localFrame),
     localFrame,
-    nodes: resolveSceneNodes(scene, videoDescription.fps, localFrame),
+    nodes: resolveSceneNodes(sceneWithLayout, videoDescription.fps, localFrame),
     scene,
   };
 };

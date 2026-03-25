@@ -1,6 +1,8 @@
 import { Canvas, type CanvasRenderingContext2D, type Image } from "skia-canvas";
 import { toAppError } from "@/lib/errors";
 import type {
+  ResolvedAlignNode,
+  ResolvedCenterNode,
   ResolvedFrame,
   ResolvedFunctionGraphNode,
   ResolvedGroupNode,
@@ -8,6 +10,7 @@ import type {
   ResolvedMathNode,
   ResolvedParametricGraphNode,
   ResolvedRectNode,
+  ResolvedStackNode,
   ResolvedTextNode,
   ResolvedVideoNode,
   VideoDescription,
@@ -20,7 +23,8 @@ import type { PreRenderCaches } from "@/lib/video/pre-render";
 const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
 const getNodeDimensions = (
-  node: ResolvedVideoNode
+  node: ResolvedVideoNode,
+  context: CanvasRenderingContext2D
 ): {
   height: number;
   width: number;
@@ -39,9 +43,16 @@ const getNodeDimensions = (
   }
 
   if (node.type === "text") {
+    let width: number;
+    if (node.maxWidth === undefined) {
+      context.font = `${node.fontWeight} ${node.fontSize}px ${node.fontFamily}`;
+      width = context.measureText(node.text).width;
+    } else {
+      width = node.maxWidth;
+    }
     return {
       height: node.lineHeight * node.text.split("\n").length,
-      width: node.maxWidth ?? 0,
+      width,
     };
   }
 
@@ -52,12 +63,13 @@ const getNodeDimensions = (
 };
 
 const getAnchorOffset = (
-  node: ResolvedVideoNode
+  node: ResolvedVideoNode,
+  context: CanvasRenderingContext2D
 ): {
   x: number;
   y: number;
 } => {
-  const { height, width } = getNodeDimensions(node);
+  const { height, width } = getNodeDimensions(node, context);
 
   if (node.anchor === "top-left") {
     return { x: 0, y: 0 };
@@ -98,7 +110,7 @@ const applyNodeTransform = (
   context: CanvasRenderingContext2D,
   node: ResolvedVideoNode
 ): void => {
-  const anchorOffset = getAnchorOffset(node);
+  const anchorOffset = getAnchorOffset(node, context);
 
   context.translate(node.x + anchorOffset.x, node.y + anchorOffset.y);
   context.rotate(degreesToRadians(node.rotation));
@@ -113,6 +125,9 @@ const applyNodeTransform = (
   );
   context.translate(-anchorOffset.x, -anchorOffset.y);
   context.globalAlpha *= node.opacity;
+  if (node.blur > 0) {
+    context.filter = `blur(${node.blur}px)`;
+  }
 };
 
 const drawRoundedRect = (
@@ -386,9 +401,23 @@ const drawParametricGraphNode = (
   );
 };
 
-const drawGroupNode = async (
+type ResolvedContainerNode =
+  | ResolvedAlignNode
+  | ResolvedCenterNode
+  | ResolvedGroupNode
+  | ResolvedStackNode;
+
+const isContainerNode = (
+  node: ResolvedVideoNode
+): node is ResolvedContainerNode =>
+  node.type === "group" ||
+  node.type === "center" ||
+  node.type === "stack" ||
+  node.type === "align";
+
+const drawContainerNode = async (
   context: CanvasRenderingContext2D,
-  node: ResolvedGroupNode,
+  node: ResolvedContainerNode,
   caches: PreRenderCaches
 ): Promise<void> => {
   for (const childNode of node.children) {
@@ -405,8 +434,8 @@ const drawResolvedNode = async (
   applyNodeTransform(context, node);
 
   try {
-    if (node.type === "group") {
-      await drawGroupNode(context, node, caches);
+    if (isContainerNode(node)) {
+      await drawContainerNode(context, node, caches);
       return;
     }
 

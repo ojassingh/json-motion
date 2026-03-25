@@ -8,6 +8,7 @@ import type {
 import { loadVideoImage } from "@/lib/video/assets";
 import { type Point2D, preSampleGraphNodes } from "@/lib/video/graph";
 import { preRenderMathNodes } from "@/lib/video/math";
+import { collectVisualWarnings } from "@/lib/video/visual-validation";
 
 export interface PreRenderCaches {
   graphPoints: Map<string, Point2D[]>;
@@ -24,7 +25,12 @@ const flattenNodes = (nodes: VideoNode[]): VideoNode[] => {
       continue;
     }
     result.push(node);
-    if (node.type === "group") {
+    if (
+      node.type === "group" ||
+      node.type === "center" ||
+      node.type === "stack" ||
+      node.type === "align"
+    ) {
       stack.push(...node.children);
     }
   }
@@ -48,6 +54,12 @@ const preloadImageAssets = async (
 export const preRenderVideo = async (
   videoDescription: VideoDescription
 ): Promise<PreRenderCaches> => {
+  const warnings = collectVisualWarnings(videoDescription);
+
+  for (const warning of warnings) {
+    console.warn(`[visual-validation] ${warning.message}`);
+  }
+
   await preloadImageAssets(videoDescription);
   const mathImages = await preRenderMathNodes(videoDescription.scenes);
   const graphPoints = preSampleGraphNodes(videoDescription.scenes);
