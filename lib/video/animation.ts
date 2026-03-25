@@ -1,7 +1,10 @@
 import type {
   ResolvedFrame,
+  ResolvedFunctionGraphNode,
   ResolvedGroupNode,
   ResolvedImageNode,
+  ResolvedMathNode,
+  ResolvedParametricGraphNode,
   ResolvedRectNode,
   ResolvedTextNode,
   ResolvedVideoNode,
@@ -10,11 +13,14 @@ import type {
   VideoColorAnimationValue,
   VideoDescription,
   VideoEasingName,
+  VideoFunctionGraphNode,
   VideoGroupNode,
   VideoImageNode,
+  VideoMathNode,
   VideoNode,
   VideoNumericAnimationStep,
   VideoNumericAnimationValue,
+  VideoParametricGraphNode,
   VideoRectNode,
   VideoScene,
   VideoTextNode,
@@ -36,6 +42,7 @@ import {
 
 type ColorAnimationProperty = "background" | "color" | "fill" | "stroke";
 type NumericAnimationProperty =
+  | "drawProgress"
   | "fontSize"
   | "height"
   | "opacity"
@@ -583,6 +590,69 @@ const getImageExplicitAnimations = (
   },
 });
 
+const getMathExplicitAnimations = (
+  _node: VideoMathNode,
+  _fps: number
+): NormalizedNodeAnimations => ({ colors: {}, numbers: {} });
+
+const getFunctionGraphExplicitAnimations = (
+  node: VideoFunctionGraphNode,
+  fps: number
+): NormalizedNodeAnimations => ({
+  colors: {
+    ...(node.animate?.color
+      ? { color: normalizeColorAnimationValue(node.animate.color, fps) }
+      : {}),
+  },
+  numbers: {
+    ...(node.animate?.drawProgress
+      ? {
+          drawProgress: normalizeNumericAnimationValue(
+            node.animate.drawProgress,
+            fps
+          ),
+        }
+      : {}),
+    ...(node.animate?.strokeWidth
+      ? {
+          strokeWidth: normalizeNumericAnimationValue(
+            node.animate.strokeWidth,
+            fps
+          ),
+        }
+      : {}),
+  },
+});
+
+const getParametricGraphExplicitAnimations = (
+  node: VideoParametricGraphNode,
+  fps: number
+): NormalizedNodeAnimations => ({
+  colors: {
+    ...(node.animate?.color
+      ? { color: normalizeColorAnimationValue(node.animate.color, fps) }
+      : {}),
+  },
+  numbers: {
+    ...(node.animate?.drawProgress
+      ? {
+          drawProgress: normalizeNumericAnimationValue(
+            node.animate.drawProgress,
+            fps
+          ),
+        }
+      : {}),
+    ...(node.animate?.strokeWidth
+      ? {
+          strokeWidth: normalizeNumericAnimationValue(
+            node.animate.strokeWidth,
+            fps
+          ),
+        }
+      : {}),
+  },
+});
+
 const mergeAnimations = (
   primitiveAnimations: NormalizedNodeAnimations,
   explicitAnimations: NormalizedNodeAnimations
@@ -618,6 +688,12 @@ export const normalizeNodeAnimations = (
     typeSpecificAnimations = getTextExplicitAnimations(node, fps);
   } else if (node.type === "image") {
     typeSpecificAnimations = getImageExplicitAnimations(node, fps);
+  } else if (node.type === "math") {
+    typeSpecificAnimations = getMathExplicitAnimations(node, fps);
+  } else if (node.type === "functionGraph") {
+    typeSpecificAnimations = getFunctionGraphExplicitAnimations(node, fps);
+  } else if (node.type === "parametricGraph") {
+    typeSpecificAnimations = getParametricGraphExplicitAnimations(node, fps);
   }
 
   return mergeAnimations(
@@ -904,6 +980,105 @@ const resolveImageNode = (
   };
 };
 
+const DEFAULT_MATH_COLOR = "#f8fafc";
+const DEFAULT_GRAPH_COLOR = "#f8fafc";
+const DEFAULT_STROKE_WIDTH = 2;
+
+const resolveMathNode = (
+  node: VideoMathNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number
+): ResolvedMathNode => {
+  const animations = normalizeNodeAnimations(node, fps, sceneDuration);
+
+  return {
+    ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+    color:
+      resolveAnimatedColorValue(
+        node.color ?? DEFAULT_MATH_COLOR,
+        animations.colors.color,
+        localFrame
+      ) ?? DEFAULT_MATH_COLOR,
+    fontSize: node.fontSize,
+    height: node.height,
+    latex: node.latex,
+    type: "math",
+    width: node.width,
+  };
+};
+
+const resolveFunctionGraphNode = (
+  node: VideoFunctionGraphNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number
+): ResolvedFunctionGraphNode => {
+  const animations = normalizeNodeAnimations(node, fps, sceneDuration);
+
+  return {
+    ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+    color:
+      resolveAnimatedColorValue(
+        node.color ?? DEFAULT_GRAPH_COLOR,
+        animations.colors.color,
+        localFrame
+      ) ?? DEFAULT_GRAPH_COLOR,
+    drawProgress: resolveAnimatedNumericValue(
+      node.drawProgress ?? 1,
+      animations.numbers.drawProgress,
+      localFrame
+    ),
+    height: node.height,
+    showAxes: node.showAxes ?? false,
+    showGrid: node.showGrid ?? false,
+    strokeWidth: resolveAnimatedNumericValue(
+      node.strokeWidth ?? DEFAULT_STROKE_WIDTH,
+      animations.numbers.strokeWidth,
+      localFrame
+    ),
+    type: "functionGraph",
+    width: node.width,
+    xRange: node.xRange,
+    yRange: node.yRange,
+  };
+};
+
+const resolveParametricGraphNode = (
+  node: VideoParametricGraphNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number
+): ResolvedParametricGraphNode => {
+  const animations = normalizeNodeAnimations(node, fps, sceneDuration);
+
+  return {
+    ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+    color:
+      resolveAnimatedColorValue(
+        node.color ?? DEFAULT_GRAPH_COLOR,
+        animations.colors.color,
+        localFrame
+      ) ?? DEFAULT_GRAPH_COLOR,
+    drawProgress: resolveAnimatedNumericValue(
+      node.drawProgress ?? 1,
+      animations.numbers.drawProgress,
+      localFrame
+    ),
+    height: node.height,
+    strokeWidth: resolveAnimatedNumericValue(
+      node.strokeWidth ?? DEFAULT_STROKE_WIDTH,
+      animations.numbers.strokeWidth,
+      localFrame
+    ),
+    type: "parametricGraph",
+    width: node.width,
+  };
+};
+
 export const resolveVideoNode = (
   node: VideoNode,
   fps: number,
@@ -921,6 +1096,30 @@ export const resolveVideoNode = (
 
   if (node.type === "text") {
     return resolveTextNode(node, fps, sceneDuration, localFrame, sourceIndex);
+  }
+
+  if (node.type === "math") {
+    return resolveMathNode(node, fps, sceneDuration, localFrame, sourceIndex);
+  }
+
+  if (node.type === "functionGraph") {
+    return resolveFunctionGraphNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex
+    );
+  }
+
+  if (node.type === "parametricGraph") {
+    return resolveParametricGraphNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex
+    );
   }
 
   return resolveImageNode(node, fps, sceneDuration, localFrame, sourceIndex);
