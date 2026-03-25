@@ -3,9 +3,9 @@ import { z } from "zod";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 
 export interface NodeEntry {
-  animateSchema?: z.AnyZodObject;
+  animateSchema?: z.ZodObject<z.ZodRawShape>;
   description: string;
-  propSchema: z.AnyZodObject;
+  propSchema: z.ZodObject<z.ZodRawShape>;
   slots: string[];
 }
 
@@ -16,10 +16,10 @@ export interface CatalogOptions {
 }
 
 interface CatalogDefinition {
-  anchors: z.ZodEnum<[string, ...string[]]>;
-  easings: z.ZodEnum<[string, ...string[]]>;
+  anchors: z.ZodEnum<Record<string, string>>;
+  easings: z.ZodEnum<Record<string, string>>;
   nodes: Record<string, NodeEntry>;
-  primitives: z.ZodEnum<[string, ...string[]]>;
+  primitives: z.ZodEnum<Record<string, string>>;
 }
 
 export interface Catalog {
@@ -29,11 +29,11 @@ export interface Catalog {
 
 const describeZodType = (schema: z.ZodTypeAny): string => {
   if (schema instanceof z.ZodOptional) {
-    return describeZodType(schema.unwrap());
+    return describeZodType(schema.unwrap() as z.ZodTypeAny);
   }
 
   if (schema instanceof z.ZodNullable) {
-    return `${describeZodType(schema.unwrap())} | null`;
+    return `${describeZodType(schema.unwrap() as z.ZodTypeAny)} | null`;
   }
 
   if (schema instanceof z.ZodLiteral) {
@@ -59,7 +59,7 @@ const describeZodType = (schema: z.ZodTypeAny): string => {
   }
 
   if (schema instanceof z.ZodArray) {
-    return `${describeZodType(schema.element)}[]`;
+    return `${describeZodType(schema.element as z.ZodTypeAny)}[]`;
   }
 
   if (schema instanceof z.ZodUnion) {
