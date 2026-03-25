@@ -42,6 +42,15 @@ export type VideoGroupNode = Extract<VideoNode, { type: "group" }>;
 export type VideoImageNode = Extract<VideoNode, { type: "image" }>;
 export type VideoRectNode = Extract<VideoNode, { type: "rect" }>;
 export type VideoTextNode = Extract<VideoNode, { type: "text" }>;
+export type VideoMathNode = Extract<VideoNode, { type: "math" }>;
+export type VideoFunctionGraphNode = Extract<
+  VideoNode,
+  { type: "functionGraph" }
+>;
+export type VideoParametricGraphNode = Extract<
+  VideoNode,
+  { type: "parametricGraph" }
+>;
 
 export interface ResolvedNodeBase {
   anchor: VideoAnchor;
@@ -93,9 +102,43 @@ export interface ResolvedImageNode extends ResolvedNodeBase {
   width: number;
 }
 
+export interface ResolvedMathNode extends ResolvedNodeBase {
+  color: VideoColor;
+  fontSize: number;
+  height: number;
+  latex: string;
+  type: "math";
+  width: number;
+}
+
+export interface ResolvedFunctionGraphNode extends ResolvedNodeBase {
+  color: VideoColor;
+  drawProgress: number;
+  height: number;
+  showAxes: boolean;
+  showGrid: boolean;
+  strokeWidth: number;
+  type: "functionGraph";
+  width: number;
+  xRange: number[];
+  yRange: number[];
+}
+
+export interface ResolvedParametricGraphNode extends ResolvedNodeBase {
+  color: VideoColor;
+  drawProgress: number;
+  height: number;
+  strokeWidth: number;
+  type: "parametricGraph";
+  width: number;
+}
+
 export type ResolvedVideoNode =
+  | ResolvedFunctionGraphNode
   | ResolvedGroupNode
   | ResolvedImageNode
+  | ResolvedMathNode
+  | ResolvedParametricGraphNode
   | ResolvedRectNode
   | ResolvedTextNode;
 

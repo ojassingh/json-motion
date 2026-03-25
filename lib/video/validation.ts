@@ -177,6 +177,26 @@ const collectNodeAnimationIssues = (
     ]);
   }
 
+  if (node.type === "functionGraph") {
+    appendNumericAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "drawProgress", value: node.animate?.drawProgress },
+      { name: "strokeWidth", value: node.animate?.strokeWidth },
+    ]);
+    appendColorAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "color", value: node.animate?.color },
+    ]);
+  }
+
+  if (node.type === "parametricGraph") {
+    appendNumericAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "drawProgress", value: node.animate?.drawProgress },
+      { name: "strokeWidth", value: node.animate?.strokeWidth },
+    ]);
+    appendColorAnimationIssues(issues, scene, fps, animatePath, [
+      { name: "color", value: node.animate?.color },
+    ]);
+  }
+
   return issues;
 };
 

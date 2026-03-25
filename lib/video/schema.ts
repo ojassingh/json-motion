@@ -141,11 +141,36 @@ const videoImageAnimateSchema = videoBaseAnimateSchema
 
 const videoGroupAnimateSchema = videoBaseAnimateSchema;
 
+const videoMathAnimateSchema = videoBaseAnimateSchema;
+
+const videoFunctionGraphAnimateSchema = videoBaseAnimateSchema
+  .extend({
+    color: videoColorAnimationValueSchema.optional(),
+    drawProgress: videoNumericAnimationValueSchema.optional(),
+    strokeWidth: videoNumericAnimationValueSchema.optional(),
+  })
+  .strict();
+
+const videoParametricGraphAnimateSchema = videoBaseAnimateSchema
+  .extend({
+    color: videoColorAnimationValueSchema.optional(),
+    drawProgress: videoNumericAnimationValueSchema.optional(),
+    strokeWidth: videoNumericAnimationValueSchema.optional(),
+  })
+  .strict();
+
 type VideoNodeBaseSchemaType = z.infer<typeof videoNodeBaseSchema>;
 type VideoGroupAnimateSchemaType = z.infer<typeof videoGroupAnimateSchema>;
 type VideoRectAnimateSchemaType = z.infer<typeof videoRectAnimateSchema>;
 type VideoTextAnimateSchemaType = z.infer<typeof videoTextAnimateSchema>;
 type VideoImageAnimateSchemaType = z.infer<typeof videoImageAnimateSchema>;
+type VideoMathAnimateSchemaType = z.infer<typeof videoMathAnimateSchema>;
+type VideoFunctionGraphAnimateSchemaType = z.infer<
+  typeof videoFunctionGraphAnimateSchema
+>;
+type VideoParametricGraphAnimateSchemaType = z.infer<
+  typeof videoParametricGraphAnimateSchema
+>;
 
 interface VideoGroupNodeSchemaType extends VideoNodeBaseSchemaType {
   animate?: VideoGroupAnimateSchemaType;
@@ -186,9 +211,53 @@ interface VideoImageNodeSchemaType extends VideoNodeBaseSchemaType {
   width: number;
 }
 
+export interface VideoMathNodeSchemaType extends VideoNodeBaseSchemaType {
+  animate?: VideoMathAnimateSchemaType;
+  color?: string;
+  fontSize: number;
+  height: number;
+  latex: string;
+  type: "math";
+  width: number;
+}
+
+export interface VideoFunctionGraphNodeSchemaType
+  extends VideoNodeBaseSchemaType {
+  animate?: VideoFunctionGraphAnimateSchemaType;
+  color?: string;
+  drawProgress?: number;
+  fn: string;
+  height: number;
+  showAxes?: boolean;
+  showGrid?: boolean;
+  strokeWidth?: number;
+  type: "functionGraph";
+  width: number;
+  xRange: number[];
+  yRange: number[];
+}
+
+export interface VideoParametricGraphNodeSchemaType
+  extends VideoNodeBaseSchemaType {
+  animate?: VideoParametricGraphAnimateSchemaType;
+  color?: string;
+  drawProgress?: number;
+  fnX: string;
+  fnY: string;
+  height: number;
+  samples?: number;
+  strokeWidth?: number;
+  tRange: number[];
+  type: "parametricGraph";
+  width: number;
+}
+
 type VideoNodeSchemaType =
+  | VideoFunctionGraphNodeSchemaType
   | VideoGroupNodeSchemaType
   | VideoImageNodeSchemaType
+  | VideoMathNodeSchemaType
+  | VideoParametricGraphNodeSchemaType
   | VideoRectNodeSchemaType
   | VideoTextNodeSchemaType;
 
@@ -198,6 +267,9 @@ export const videoNodeSchema: z.ZodType<VideoNodeSchemaType> = z.lazy(() =>
     videoRectNodeSchema,
     videoTextNodeSchema,
     videoImageNodeSchema,
+    videoMathNodeSchema,
+    videoFunctionGraphNodeSchema,
+    videoParametricGraphNodeSchema,
   ])
 );
 
@@ -239,6 +311,47 @@ const videoImageNodeSchema = videoNodeBaseSchema.extend({
   height: positiveNumberSchema,
   src: z.string().trim().min(1),
   type: z.literal("image"),
+  width: positiveNumberSchema,
+});
+
+const videoMathNodeSchema = videoNodeBaseSchema.extend({
+  animate: videoMathAnimateSchema.optional(),
+  color: videoHexColorSchema.optional(),
+  fontSize: positiveNumberSchema,
+  height: positiveNumberSchema,
+  latex: z.string().trim().min(1),
+  type: z.literal("math"),
+  width: positiveNumberSchema,
+});
+
+const rangeSchema = z.array(finiteNumberSchema).length(2);
+
+const videoFunctionGraphNodeSchema = videoNodeBaseSchema.extend({
+  animate: videoFunctionGraphAnimateSchema.optional(),
+  color: videoHexColorSchema.optional(),
+  drawProgress: z.number().min(0).max(1).optional(),
+  fn: z.string().trim().min(1),
+  height: positiveNumberSchema,
+  showAxes: z.boolean().optional(),
+  showGrid: z.boolean().optional(),
+  strokeWidth: positiveNumberSchema.optional(),
+  type: z.literal("functionGraph"),
+  width: positiveNumberSchema,
+  xRange: rangeSchema,
+  yRange: rangeSchema,
+});
+
+const videoParametricGraphNodeSchema = videoNodeBaseSchema.extend({
+  animate: videoParametricGraphAnimateSchema.optional(),
+  color: videoHexColorSchema.optional(),
+  drawProgress: z.number().min(0).max(1).optional(),
+  fnX: z.string().trim().min(1),
+  fnY: z.string().trim().min(1),
+  height: positiveNumberSchema,
+  samples: z.number().int().positive().optional(),
+  strokeWidth: positiveNumberSchema.optional(),
+  tRange: rangeSchema,
+  type: z.literal("parametricGraph"),
   width: positiveNumberSchema,
 });
 
