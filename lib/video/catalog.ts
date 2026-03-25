@@ -171,7 +171,8 @@ ${primitiveList}
 
 Use \`"BlurFadeIn"\` as the default enter animation. Use \`"FadeOut"\` for exit at scene end.
 Use \`"DrawIn"\` on \`functionGraph\` or \`parametricGraph\` nodes to animate drawing from left to right.
-Use \`primitives\` when you want simple defaults.
+Use \`primitives\` whenever possible. Prefer them for almost all animations because they are simpler and more reliable.
+Only use custom animation fields when primitives cannot express the motion cleanly, or when the user explicitly asks for a different animation.
 
 ### Custom enter animation
 
@@ -238,6 +239,7 @@ const generatePrompt = (
     "- Omit `background`, `color`, and `fontFamily` unless intentionally overriding defaults.",
     "  Defaults: background = black, text color = #f8fafc, fontFamily = Inter.",
     "- Use `BlurFadeIn` as the default enter animation unless the user requests something else.",
+    "- Prefer `primitives` whenever possible. Use custom animation fields only when primitives are not enough or the user explicitly asks for a different animation.",
     "- Use either `primitives` or custom animation fields on a node. Never use both together.",
     "- Keep text concise. Headlines should be one short sentence or less.",
     "- Only include elements the user explicitly requests.",

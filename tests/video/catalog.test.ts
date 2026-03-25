@@ -162,4 +162,13 @@ describe("PROMPT_TO_VIDEO_SYSTEM_PROMPT", () => {
     );
     expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("Never use both together");
   });
+
+  it("prefers primitives over custom animations by default", () => {
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain(
+      "Prefer `primitives` whenever possible"
+    );
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain(
+      "Only use custom animation fields when primitives cannot express the motion cleanly"
+    );
+  });
 });
