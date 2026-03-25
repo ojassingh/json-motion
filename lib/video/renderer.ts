@@ -2,8 +2,11 @@ import { Canvas, type CanvasRenderingContext2D, type Image } from "skia-canvas";
 import { toAppError } from "@/lib/errors";
 import type {
   ResolvedFrame,
+  ResolvedFunctionGraphNode,
   ResolvedGroupNode,
   ResolvedImageNode,
+  ResolvedMathNode,
+  ResolvedParametricGraphNode,
   ResolvedRectNode,
   ResolvedTextNode,
   ResolvedVideoNode,
@@ -11,6 +14,8 @@ import type {
 } from "@/lib/types/video";
 import { resolveFrame } from "@/lib/video/animation";
 import { loadVideoImage } from "@/lib/video/assets";
+import type { Point2D } from "@/lib/video/graph";
+import type { PreRenderCaches } from "@/lib/video/pre-render";
 
 const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
@@ -20,7 +25,13 @@ const getNodeDimensions = (
   height: number;
   width: number;
 } => {
-  if (node.type === "rect" || node.type === "image") {
+  if (
+    node.type === "rect" ||
+    node.type === "image" ||
+    node.type === "math" ||
+    node.type === "functionGraph" ||
+    node.type === "parametricGraph"
+  ) {
     return {
       height: node.height,
       width: node.width,
@@ -233,25 +244,169 @@ const drawImageNode = async (
   );
 };
 
+const drawMathNode = (
+  context: CanvasRenderingContext2D,
+  node: ResolvedMathNode,
+  mathImages: Map<string, Image>
+): void => {
+  const key = `${node.latex}::${node.color}`;
+  const image = mathImages.get(key);
+
+  if (!image || image.height === 0) {
+    return;
+  }
+
+  const scale = node.fontSize / image.height;
+  context.drawImage(image, 0, 0, image.width * scale, image.height * scale);
+};
+
+const strokePath = (
+  context: CanvasRenderingContext2D,
+  points: Point2D[],
+  color: string,
+  strokeWidth: number
+): void => {
+  if (points.length === 0) {
+    return;
+  }
+
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+
+  for (let i = 1; i < points.length; i++) {
+    context.lineTo(points[i].x, points[i].y);
+  }
+
+  context.strokeStyle = color;
+  context.lineWidth = strokeWidth;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.stroke();
+};
+
+const drawFunctionGraphAxes = (
+  context: CanvasRenderingContext2D,
+  node: ResolvedFunctionGraphNode
+): void => {
+  const xMin = node.xRange[0] ?? 0;
+  const xMax = node.xRange[1] ?? 1;
+  const yMin = node.yRange[0] ?? 0;
+  const yMax = node.yRange[1] ?? 1;
+  const axisColor = "#ffffff33";
+
+  context.strokeStyle = axisColor;
+  context.lineWidth = 1;
+
+  if (xMin <= 0 && xMax >= 0) {
+    const axisX = ((0 - xMin) / (xMax - xMin)) * node.width;
+    context.beginPath();
+    context.moveTo(axisX, 0);
+    context.lineTo(axisX, node.height);
+    context.stroke();
+  }
+
+  if (yMin <= 0 && yMax >= 0) {
+    const axisY = (1 - (0 - yMin) / (yMax - yMin)) * node.height;
+    context.beginPath();
+    context.moveTo(0, axisY);
+    context.lineTo(node.width, axisY);
+    context.stroke();
+  }
+};
+
+const GRID_LINES = 5;
+
+const drawFunctionGraphGrid = (
+  context: CanvasRenderingContext2D,
+  node: ResolvedFunctionGraphNode
+): void => {
+  context.strokeStyle = "#ffffff1a";
+  context.lineWidth = 1;
+
+  for (let i = 1; i < GRID_LINES; i++) {
+    const x = (i / GRID_LINES) * node.width;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, node.height);
+    context.stroke();
+
+    const y = (i / GRID_LINES) * node.height;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(node.width, y);
+    context.stroke();
+  }
+};
+
+const drawFunctionGraphNode = (
+  context: CanvasRenderingContext2D,
+  node: ResolvedFunctionGraphNode,
+  graphPoints: Map<string, Point2D[]>
+): void => {
+  const points = graphPoints.get(node.id);
+
+  if (!points || points.length === 0) {
+    return;
+  }
+
+  if (node.showGrid) {
+    drawFunctionGraphGrid(context, node);
+  }
+
+  if (node.showAxes) {
+    drawFunctionGraphAxes(context, node);
+  }
+
+  const visibleCount = Math.floor(points.length * node.drawProgress);
+  strokePath(
+    context,
+    points.slice(0, visibleCount),
+    node.color,
+    node.strokeWidth
+  );
+};
+
+const drawParametricGraphNode = (
+  context: CanvasRenderingContext2D,
+  node: ResolvedParametricGraphNode,
+  graphPoints: Map<string, Point2D[]>
+): void => {
+  const points = graphPoints.get(node.id);
+
+  if (!points || points.length === 0) {
+    return;
+  }
+
+  const visibleCount = Math.floor(points.length * node.drawProgress);
+  strokePath(
+    context,
+    points.slice(0, visibleCount),
+    node.color,
+    node.strokeWidth
+  );
+};
+
 const drawGroupNode = async (
   context: CanvasRenderingContext2D,
-  node: ResolvedGroupNode
+  node: ResolvedGroupNode,
+  caches: PreRenderCaches
 ): Promise<void> => {
   for (const childNode of node.children) {
-    await drawResolvedNode(context, childNode);
+    await drawResolvedNode(context, childNode, caches);
   }
 };
 
 const drawResolvedNode = async (
   context: CanvasRenderingContext2D,
-  node: ResolvedVideoNode
+  node: ResolvedVideoNode,
+  caches: PreRenderCaches
 ): Promise<void> => {
   context.save();
   applyNodeTransform(context, node);
 
   try {
     if (node.type === "group") {
-      await drawGroupNode(context, node);
+      await drawGroupNode(context, node, caches);
       return;
     }
 
@@ -262,6 +417,21 @@ const drawResolvedNode = async (
 
     if (node.type === "text") {
       drawTextNode(context, node);
+      return;
+    }
+
+    if (node.type === "math") {
+      drawMathNode(context, node, caches.mathImages);
+      return;
+    }
+
+    if (node.type === "functionGraph") {
+      drawFunctionGraphNode(context, node, caches.graphPoints);
+      return;
+    }
+
+    if (node.type === "parametricGraph") {
+      drawParametricGraphNode(context, node, caches.graphPoints);
       return;
     }
 
@@ -297,7 +467,8 @@ const paintFrameBackground = (
 
 export const renderFrameToRgba = async (
   videoDescription: VideoDescription,
-  absoluteFrame: number
+  absoluteFrame: number,
+  caches: PreRenderCaches
 ): Promise<Buffer> => {
   try {
     const frame = resolveFrame(videoDescription, absoluteFrame);
@@ -306,7 +477,7 @@ export const renderFrameToRgba = async (
     paintFrameBackground(context, frame, videoDescription);
 
     for (const node of frame.nodes) {
-      await drawResolvedNode(context, node);
+      await drawResolvedNode(context, node, caches);
     }
 
     return canvas.toBufferSync("raw", { colorType: "rgba" });

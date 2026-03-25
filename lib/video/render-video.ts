@@ -6,6 +6,7 @@ import type {
 } from "@/lib/types/video";
 import { getDefaultVideoCodec } from "@/lib/video/config";
 import { encodeVideoFrames } from "@/lib/video/encoder";
+import { type PreRenderCaches, preRenderVideo } from "@/lib/video/pre-render";
 import { renderFrameToRgba } from "@/lib/video/renderer";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 import {
@@ -15,12 +16,13 @@ import {
 import { getTotalFrameCount } from "@/lib/video/timeline";
 
 const createFrameStream = async function* (
-  videoDescription: VideoDescription
+  videoDescription: VideoDescription,
+  caches: PreRenderCaches
 ): AsyncGenerator<Buffer> {
   const frameCount = getTotalFrameCount(videoDescription);
 
   for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-    yield await renderFrameToRgba(videoDescription, frameIndex);
+    yield await renderFrameToRgba(videoDescription, frameIndex, caches);
   }
 };
 
@@ -44,11 +46,13 @@ export const renderVideo = async (
     ? createCustomRenderOutputTarget(options.outputFilePath, options.jobId)
     : await createRenderOutputTarget(options?.jobId);
 
+  const caches = await preRenderVideo(videoDescription);
+
   await encodeVideoFrames(
     videoDescription,
     codec,
     outputTarget.filePath,
-    createFrameStream(videoDescription)
+    createFrameStream(videoDescription, caches)
   );
 
   return {
