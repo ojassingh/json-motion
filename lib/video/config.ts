@@ -1,6 +1,6 @@
 import path from "node:path";
 
-export const DEFAULT_SCENE_BACKGROUND = "#050816";
+export const DEFAULT_SCENE_BACKGROUND = "#000000";
 export const DEFAULT_TEXT_COLOR = "#f8fafc";
 export const DEFAULT_TEXT_FONT_FAMILY = "Inter, Arial, sans-serif";
 export const DEFAULT_TEXT_FONT_SIZE = 48;

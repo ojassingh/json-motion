@@ -2,7 +2,7 @@ import type { VideoDescription } from "@/lib/types/video";
 
 export const sampleVideoDescription: VideoDescription = {
   background: "#07111f",
-  fps: 30,
+  fps: 60,
   height: 360,
   scenes: [
     {

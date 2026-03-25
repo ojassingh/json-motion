@@ -220,7 +220,12 @@ const collectNodeValidationIssues = (
 
   issues.push(...collectNodeAnimationIssues(node, scene, fps, path));
 
-  if (node.type === "group") {
+  if (
+    node.type === "group" ||
+    node.type === "center" ||
+    node.type === "stack" ||
+    node.type === "align"
+  ) {
     for (const [childIndex, childNode] of node.children.entries()) {
       issues.push(
         ...collectNodeValidationIssues(

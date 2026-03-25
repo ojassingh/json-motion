@@ -11,6 +11,7 @@ import type {
   videoNumericAnimationValueSchema,
   videoPrimitiveSchema,
   videoSceneSchema,
+  videoStackAlignSchema,
   videoTextAlignSchema,
   videoTimeSchema,
 } from "@/lib/video/schema";
@@ -22,6 +23,7 @@ export type VideoEasingName = z.infer<typeof videoEasingSchema>;
 export type VideoImageFit = z.infer<typeof videoImageFitSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
 export type VideoPrimitive = z.infer<typeof videoPrimitiveSchema>;
+export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;
 export type VideoColorAnimationValue = z.infer<
   typeof videoColorAnimationValueSchema
 >;
@@ -38,22 +40,26 @@ export type VideoScene = z.infer<typeof videoSceneSchema>;
 export type VideoTextAlign = z.infer<typeof videoTextAlignSchema>;
 export type VideoTimeValue = z.infer<typeof videoTimeSchema>;
 
-export type VideoGroupNode = Extract<VideoNode, { type: "group" }>;
-export type VideoImageNode = Extract<VideoNode, { type: "image" }>;
-export type VideoRectNode = Extract<VideoNode, { type: "rect" }>;
-export type VideoTextNode = Extract<VideoNode, { type: "text" }>;
-export type VideoMathNode = Extract<VideoNode, { type: "math" }>;
+export type VideoAlignNode = Extract<VideoNode, { type: "align" }>;
+export type VideoCenterNode = Extract<VideoNode, { type: "center" }>;
 export type VideoFunctionGraphNode = Extract<
   VideoNode,
   { type: "functionGraph" }
 >;
+export type VideoGroupNode = Extract<VideoNode, { type: "group" }>;
+export type VideoImageNode = Extract<VideoNode, { type: "image" }>;
+export type VideoMathNode = Extract<VideoNode, { type: "math" }>;
 export type VideoParametricGraphNode = Extract<
   VideoNode,
   { type: "parametricGraph" }
 >;
+export type VideoRectNode = Extract<VideoNode, { type: "rect" }>;
+export type VideoStackNode = Extract<VideoNode, { type: "stack" }>;
+export type VideoTextNode = Extract<VideoNode, { type: "text" }>;
 
 export interface ResolvedNodeBase {
   anchor: VideoAnchor;
+  blur: number;
   id: string;
   opacity: number;
   rotation: number;
@@ -133,13 +139,31 @@ export interface ResolvedParametricGraphNode extends ResolvedNodeBase {
   width: number;
 }
 
+export interface ResolvedAlignNode extends ResolvedNodeBase {
+  children: ResolvedVideoNode[];
+  type: "align";
+}
+
+export interface ResolvedCenterNode extends ResolvedNodeBase {
+  children: ResolvedVideoNode[];
+  type: "center";
+}
+
+export interface ResolvedStackNode extends ResolvedNodeBase {
+  children: ResolvedVideoNode[];
+  type: "stack";
+}
+
 export type ResolvedVideoNode =
+  | ResolvedAlignNode
+  | ResolvedCenterNode
   | ResolvedFunctionGraphNode
   | ResolvedGroupNode
   | ResolvedImageNode
   | ResolvedMathNode
   | ResolvedParametricGraphNode
   | ResolvedRectNode
+  | ResolvedStackNode
   | ResolvedTextNode;
 
 export interface ResolvedFrame {
