@@ -85,16 +85,16 @@ export default function Page() {
             <p className="font-mono text-[11px] text-muted-foreground uppercase tracking-[0.2em]">
               Turn JSON scripts into 2D animations
             </p>
-            <h1 className="font-bold text-3xl tracking-tight lg:text-6xl">
+            <h1 className="font-semibold text-3xl tracking-tighter lg:text-6xl">
               AI
               <ArrowRight
                 aria-hidden="true"
-                className="mx-3 inline size-10 text-muted-foreground/40 sm:size-14 lg:size-16"
+                className="mx-3 inline size-10 lg:size-16"
               />
               json-motion
               <ArrowRight
                 aria-hidden="true"
-                className="mx-3 inline size-10 text-muted-foreground/40 sm:size-14 lg:size-16"
+                className="mx-3 inline size-10 lg:size-16"
               />
               video
             </h1>
