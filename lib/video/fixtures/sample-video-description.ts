@@ -6,94 +6,59 @@ export const sampleVideoDescription: VideoDescription = {
   height: 360,
   scenes: [
     {
-      background: "#07111f",
-      durationInFrames: 24,
+      background: [
+        {
+          end: 11,
+          from: "#07111f",
+          to: "#0f172a",
+        },
+        {
+          end: 23,
+          from: "#0f172a",
+          start: 12,
+          to: "#111827",
+        },
+      ],
+      duration: 24,
       id: "intro",
       nodes: [
         {
-          animations: [
-            {
-              endFrame: 10,
-              fromY: 40,
-              name: "slide-in",
-              startFrame: 0,
-              type: "effect",
-            },
-            {
-              endFrame: 10,
-              name: "fade-in",
-              startFrame: 0,
-              type: "effect",
-            },
-          ],
+          cornerRadius: 24,
           fill: "#0f172a",
           height: 220,
           id: "hero-card",
-          radius: 24,
-          transform: {
-            x: 48,
-            y: 72,
-          },
+          primitives: ["FadeIn", "SlideIn"],
           type: "rect",
           width: 544,
+          x: 48,
+          y: 72,
         },
         {
           color: "#f8fafc",
-          fontSize: 42,
           fontWeight: 700,
           id: "headline",
+          size: 42,
           text: "Deterministic video,\nagent-first timing.",
-          transform: {
-            x: 88,
-            y: 112,
-          },
           type: "text",
+          x: 88,
+          y: 112,
         },
         {
-          animations: [
-            {
-              endFrame: 23,
-              keyframes: [
-                {
-                  frame: 0,
-                  value: 0.9,
-                },
-                {
-                  frame: 23,
-                  value: 1.05,
-                },
-              ],
-              property: "scaleX",
-              startFrame: 0,
-              type: "keyframes",
+          animate: {
+            scale: {
+              end: 23,
+              from: 0.9,
+              to: 1.05,
             },
-            {
-              endFrame: 23,
-              keyframes: [
-                {
-                  frame: 0,
-                  value: 0.9,
-                },
-                {
-                  frame: 23,
-                  value: 1.05,
-                },
-              ],
-              property: "scaleY",
-              startFrame: 0,
-              type: "keyframes",
-            },
-          ],
+          },
+          cornerRadius: 999,
           fill: "#38bdf8",
           height: 48,
           id: "accent-bar",
-          radius: 999,
-          transform: {
-            x: 88,
-            y: 280,
-          },
           type: "rect",
           width: 180,
+          x: 88,
+          y: 280,
         },
       ],
       startFrame: 0,
