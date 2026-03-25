@@ -18,6 +18,7 @@ import type {
 import { resolveFrame } from "@/lib/video/animation";
 import { loadVideoImage } from "@/lib/video/assets";
 import type { Point2D } from "@/lib/video/graph";
+import { buildMathCacheKey } from "@/lib/video/math";
 import type { PreRenderCaches } from "@/lib/video/pre-render";
 
 const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
@@ -264,7 +265,7 @@ const drawMathNode = (
   node: ResolvedMathNode,
   mathImages: Map<string, Image>
 ): void => {
-  const key = `${node.latex}::${node.color}`;
+  const key = buildMathCacheKey(node.latex, node.color);
   const image = mathImages.get(key);
 
   if (!image || image.height === 0) {
@@ -500,7 +501,7 @@ export const renderFrameToRgba = async (
   caches: PreRenderCaches
 ): Promise<Buffer> => {
   try {
-    const frame = resolveFrame(videoDescription, absoluteFrame);
+    const frame = resolveFrame(videoDescription, absoluteFrame, caches);
     const { canvas, context } = createCanvas(videoDescription);
 
     paintFrameBackground(context, frame, videoDescription);

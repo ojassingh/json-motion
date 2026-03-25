@@ -1,19 +1,27 @@
 import type { VideoAnchor, VideoNode } from "@/lib/types/video";
+import { resolveMathDimensions } from "@/lib/video/math";
+import type { PreRenderCaches } from "@/lib/video/pre-render";
 
 interface Dimensions {
   height: number;
   width: number;
 }
 
-const getStaticNodeDimensions = (node: VideoNode): Dimensions => {
+const getStaticNodeDimensions = (
+  node: VideoNode,
+  caches?: PreRenderCaches
+): Dimensions => {
   if (
     node.type === "rect" ||
     node.type === "image" ||
-    node.type === "math" ||
     node.type === "functionGraph" ||
     node.type === "parametricGraph"
   ) {
     return { height: node.height, width: node.width };
+  }
+
+  if (node.type === "math") {
+    return resolveMathDimensions(node, caches?.mathImages);
   }
 
   if (node.type === "text") {
@@ -25,7 +33,7 @@ const getStaticNodeDimensions = (node: VideoNode): Dimensions => {
     let maxBottom = 0;
 
     for (const child of node.children) {
-      const dims = getStaticNodeDimensions(child);
+      const dims = getStaticNodeDimensions(child, caches);
       const right = (child.x ?? 0) + dims.width;
       const bottom = (child.y ?? 0) + dims.height;
       maxRight = Math.max(maxRight, right);
@@ -36,7 +44,9 @@ const getStaticNodeDimensions = (node: VideoNode): Dimensions => {
   }
 
   if (node.type === "stack") {
-    const childDims = node.children.map(getStaticNodeDimensions);
+    const childDims = node.children.map((child) =>
+      getStaticNodeDimensions(child, caches)
+    );
     const gapTotal = node.gap * Math.max(0, childDims.length - 1);
 
     if (node.direction === "vertical") {
@@ -57,7 +67,9 @@ const getStaticNodeDimensions = (node: VideoNode): Dimensions => {
       return { height: node.height, width: node.width };
     }
 
-    const childDims = node.children.map(getStaticNodeDimensions);
+    const childDims = node.children.map((child) =>
+      getStaticNodeDimensions(child, caches)
+    );
     const first = childDims[0] ?? { height: 0, width: 0 };
     return {
       height: node.height ?? first.height,
@@ -68,16 +80,24 @@ const getStaticNodeDimensions = (node: VideoNode): Dimensions => {
   return { height: 0, width: 0 };
 };
 
-const applyOffset = (node: VideoNode, dx: number, dy: number): VideoNode =>
-  ({ ...node, x: (node.x ?? 0) + dx, y: (node.y ?? 0) + dy }) as VideoNode;
+const applyOffset = <TNode extends VideoNode>(
+  node: TNode,
+  dx: number,
+  dy: number
+): TNode => ({
+  ...node,
+  x: (node.x ?? 0) + dx,
+  y: (node.y ?? 0) + dy,
+});
 
 const resolveCenterChildren = (
   children: VideoNode[],
   containerWidth: number,
-  containerHeight: number
+  containerHeight: number,
+  caches?: PreRenderCaches
 ): VideoNode[] =>
   children.map((child) => {
-    const dims = getStaticNodeDimensions(child);
+    const dims = getStaticNodeDimensions(child, caches);
     return applyOffset(
       child,
       containerWidth / 2 - dims.width / 2,
@@ -89,9 +109,12 @@ const resolveStackChildren = (
   children: VideoNode[],
   direction: "horizontal" | "vertical",
   gap: number,
-  align: "center" | "end" | "start"
+  align: "center" | "end" | "start",
+  caches?: PreRenderCaches
 ): VideoNode[] => {
-  const childDimensions = children.map(getStaticNodeDimensions);
+  const childDimensions = children.map((child) =>
+    getStaticNodeDimensions(child, caches)
+  );
 
   const crossAxisSize =
     direction === "vertical"
@@ -139,10 +162,11 @@ const resolveAlignChildren = (
   position: VideoAnchor,
   padding: number,
   containerWidth: number,
-  containerHeight: number
+  containerHeight: number,
+  caches?: PreRenderCaches
 ): VideoNode[] =>
   children.map((child) => {
-    const dims = getStaticNodeDimensions(child);
+    const dims = getStaticNodeDimensions(child, caches);
     const { xFactor, yFactor } = anchorFactors[position];
 
     const rawX = xFactor * containerWidth;
@@ -172,16 +196,22 @@ const resolveAlignChildren = (
 const resolveNodeLayout = (
   node: VideoNode,
   containerWidth: number,
-  containerHeight: number
+  containerHeight: number,
+  caches?: PreRenderCaches
 ): VideoNode => {
   if (node.type === "center") {
     const width = node.width ?? containerWidth;
     const height = node.height ?? containerHeight;
-    const resolved = resolveCenterChildren(node.children, width, height);
+    const resolved = resolveCenterChildren(
+      node.children,
+      width,
+      height,
+      caches
+    );
     return {
       ...node,
       children: resolved.map((child) =>
-        resolveNodeLayout(child, width, height)
+        resolveNodeLayout(child, width, height, caches)
       ),
     };
   }
@@ -191,12 +221,13 @@ const resolveNodeLayout = (
       node.children,
       node.direction,
       node.gap,
-      node.align ?? "center"
+      node.align ?? "center",
+      caches
     );
     return {
       ...node,
       children: resolved.map((child) =>
-        resolveNodeLayout(child, containerWidth, containerHeight)
+        resolveNodeLayout(child, containerWidth, containerHeight, caches)
       ),
     };
   }
@@ -207,12 +238,13 @@ const resolveNodeLayout = (
       node.position,
       node.padding ?? 0,
       containerWidth,
-      containerHeight
+      containerHeight,
+      caches
     );
     return {
       ...node,
       children: resolved.map((child) =>
-        resolveNodeLayout(child, containerWidth, containerHeight)
+        resolveNodeLayout(child, containerWidth, containerHeight, caches)
       ),
     };
   }
@@ -221,7 +253,7 @@ const resolveNodeLayout = (
     return {
       ...node,
       children: node.children.map((child) =>
-        resolveNodeLayout(child, containerWidth, containerHeight)
+        resolveNodeLayout(child, containerWidth, containerHeight, caches)
       ),
     };
   }
@@ -232,6 +264,7 @@ const resolveNodeLayout = (
 export const resolveLayout = (
   nodes: VideoNode[],
   frameWidth: number,
-  frameHeight: number
+  frameHeight: number,
+  caches?: PreRenderCaches
 ): VideoNode[] =>
-  nodes.map((node) => resolveNodeLayout(node, frameWidth, frameHeight));
+  nodes.map((node) => resolveNodeLayout(node, frameWidth, frameHeight, caches));
