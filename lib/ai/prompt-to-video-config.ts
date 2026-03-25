@@ -1,4 +1,11 @@
-const SUPPORTED_NODE_TYPES = ["group", "rect", "text"] as const;
+const SUPPORTED_NODE_TYPES = [
+  "group",
+  "rect",
+  "text",
+  "math",
+  "functionGraph",
+  "parametricGraph",
+] as const;
 const SUPPORTED_PRIMITIVES = [
   "FadeIn",
   "FadeOut",
@@ -22,7 +29,7 @@ const SUPPORTED_ANCHORS = [
 const DEFAULT_VIDEO_DIMENSIONS = {
   width: 960,
   height: 540,
-  fps: 12,
+  fps: 30,
 } as const;
 
 export const PROMPT_TO_VIDEO_MODEL =
@@ -57,6 +64,26 @@ Follow these rules exactly:
 - Use "duration" on scenes, not "durationInFrames".
 - Every animation window must fit inside its scene. If a scene lasts N frames, animation "end" values must be less than N.
 - Never include commentary, markdown, or extra keys outside the schema.
+
+## math node
+Use for LaTeX equations and mathematical notation.
+Required: id, type: "math", latex (valid LaTeX string), fontSize (positive number, controls rendered height in pixels), width, height.
+Optional: color (hex, default #f8fafc), x, y, anchor, opacity, rotate, scale, primitives, animate (base transforms only).
+Example: { "id": "eq1", "type": "math", "latex": "E = mc^2", "fontSize": 48, "width": 400, "height": 100, "color": "#ffffff", "x": 280, "y": 220, "anchor": "center" }
+
+## functionGraph node
+Use for y = f(x) curves. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.).
+Required: id, type: "functionGraph", fn (mathjs expression in x), xRange ([min, max]), yRange ([min, max]), width, height.
+Optional: color (hex, default #f8fafc), strokeWidth (default 2), showAxes (boolean), showGrid (boolean), drawProgress (0-1, default 1), x, y, anchor, opacity, primitives.
+Animate: drawProgress, color, strokeWidth support animate blocks.
+Example: { "id": "sine", "type": "functionGraph", "fn": "sin(x)", "xRange": [-6.28, 6.28], "yRange": [-1.5, 1.5], "width": 600, "height": 300, "color": "#60a5fa", "showAxes": true, "animate": { "drawProgress": { "from": 0, "to": 1, "end": 60 } } }
+
+## parametricGraph node
+Use for parametric curves where both x and y are functions of t. Expressions use mathjs syntax in t.
+Required: id, type: "parametricGraph", fnX (mathjs expression in t), fnY (mathjs expression in t), tRange ([min, max]), width, height.
+Optional: color (hex, default #f8fafc), strokeWidth (default 2), drawProgress (0-1, default 1), samples (integer, default 500), x, y, anchor, opacity, primitives.
+Animate: drawProgress, color, strokeWidth support animate blocks.
+Example: { "id": "circle", "type": "parametricGraph", "fnX": "cos(t)", "fnY": "sin(t)", "tRange": [0, 6.28], "width": 300, "height": 300, "color": "#f472b6", "animate": { "drawProgress": { "from": 0, "to": 1, "end": 48 } } }
 `.trim();
 
 export const buildPromptToVideoUserPrompt = (prompt: string): string =>
