@@ -1,6 +1,9 @@
 import type { z } from "zod";
 
 import type {
+  videoAiNodeSchema,
+  videoAiOutputSchema,
+  videoAiSceneSchema,
   videoAnchorSchema,
   videoDescriptionSchema,
   videoEasingSchema,
@@ -16,6 +19,9 @@ import type {
 } from "@/lib/video/schema";
 
 export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
+export type VideoAiNode = z.infer<typeof videoAiNodeSchema>;
+export type VideoAiOutput = z.infer<typeof videoAiOutputSchema>;
+export type VideoAiScene = z.infer<typeof videoAiSceneSchema>;
 export type VideoColor = z.infer<typeof videoHexColorSchema>;
 export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;

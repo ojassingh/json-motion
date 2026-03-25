@@ -2,20 +2,20 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { z } from "zod";
 
 import { PROMPT_TO_VIDEO_SYSTEM_PROMPT } from "@/lib/ai/prompt-to-video-config";
-import type { VideoDescription } from "@/lib/types/video";
-import { videoDescriptionSchema } from "@/lib/video/schema";
+import type { VideoAiOutput, VideoDescription } from "@/lib/types/video";
+import { videoAiOutputSchema } from "@/lib/video/schema";
 
 const aiSdk = await import("ai");
-const { generateSceneJson } = await import("@/lib/actions/ai");
+const { convertAiOutputToVideoDescription, generateSceneJson } = await import(
+  "@/lib/actions/ai"
+);
 
-const sampleVideoDescription: VideoDescription = {
+const sampleAiOutput: VideoAiOutput = {
   background: "#0b1020",
-  fps: 12,
-  height: 540,
   scenes: [
     {
       background: "#0b1020",
-      duration: 60,
+      duration: "1s",
       id: "intro",
       nodes: [
         {
@@ -28,11 +28,12 @@ const sampleVideoDescription: VideoDescription = {
           y: 180,
         },
       ],
-      startFrame: 0,
     },
   ],
-  width: 960,
 };
+
+const sampleVideoDescription: VideoDescription =
+  convertAiOutputToVideoDescription(sampleAiOutput);
 
 describe("generateSceneJson", () => {
   const originalGatewayKey = process.env.AI_GATEWAY_API_KEY;
@@ -62,7 +63,7 @@ describe("generateSceneJson", () => {
   });
 
   it("uses a provider-compatible structured output schema", () => {
-    const jsonSchema = z.toJSONSchema(videoDescriptionSchema);
+    const jsonSchema = z.toJSONSchema(videoAiOutputSchema);
     const serializedSchema = JSON.stringify(jsonSchema);
 
     expect(serializedSchema.includes('"prefixItems"')).toBe(false);
@@ -87,7 +88,7 @@ describe("generateSceneJson", () => {
     } as unknown as ReturnType<typeof aiSdk.gateway>);
     generateText.mockResolvedValueOnce({
       finishReason: "stop",
-      output: sampleVideoDescription,
+      output: sampleAiOutput,
       usage: {
         inputTokens: 1,
         outputTokens: 1,
@@ -119,5 +120,19 @@ describe("generateSceneJson", () => {
       details: ["gateway schema mismatch"],
       status: 502,
     });
+  });
+
+  it("converts AI scene durations into engine timing", () => {
+    const videoDescription = convertAiOutputToVideoDescription({
+      scenes: [
+        { duration: "2s", id: "scene-1", nodes: [] },
+        { duration: "1.5s", id: "scene-2", nodes: [] },
+      ],
+    });
+
+    expect(videoDescription.scenes[0]?.duration).toBe(120);
+    expect(videoDescription.scenes[0]?.startFrame).toBe(0);
+    expect(videoDescription.scenes[1]?.duration).toBe(90);
+    expect(videoDescription.scenes[1]?.startFrame).toBe(120);
   });
 });
