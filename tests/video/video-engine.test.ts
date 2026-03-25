@@ -7,7 +7,6 @@ import { z } from "zod";
 
 import type { VideoDescription } from "@/lib/types/video";
 import { resolveFrame, resolveVideoNode } from "@/lib/video/animation";
-import { lerpOklch } from "@/lib/video/color";
 import { sampleVideoDescription } from "@/lib/video/fixtures/sample-video-description";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 import { getSceneForFrame, getTotalFrameCount } from "@/lib/video/timeline";
@@ -65,7 +64,7 @@ describe("videoDescriptionSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects animation windows that exceed the scene duration", () => {
+  it("rejects frame-based animate objects", () => {
     const result = videoDescriptionSchema.safeParse({
       ...sampleVideoDescription,
       scenes: [
@@ -73,20 +72,88 @@ describe("videoDescriptionSchema", () => {
           ...sampleVideoDescription.scenes[0],
           nodes: [
             {
-              animate: {
-                opacity: {
-                  end: 24,
-                  from: 0,
-                  to: 1,
-                },
-              },
+              animate: { opacity: { from: 0, to: 1, start: 0, end: 15 } },
               fill: "#38bdf8",
               height: 48,
-              id: "too-long",
+              id: "old-animate",
               type: "rect",
               width: 180,
-              x: 88,
-              y: 280,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts nodes with initial + transition", () => {
+    const result = videoDescriptionSchema.safeParse({
+      ...sampleVideoDescription,
+      scenes: [
+        {
+          ...sampleVideoDescription.scenes[0],
+          nodes: [
+            {
+              fill: "#38bdf8",
+              height: 48,
+              id: "animated-rect",
+              initial: { opacity: 0, y: 20 },
+              transition: {
+                delay: "0.1s",
+                duration: "0.4s",
+                easing: "ease-out",
+              },
+              type: "rect",
+              width: 180,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts nodes with exit + exitTransition", () => {
+    const result = videoDescriptionSchema.safeParse({
+      ...sampleVideoDescription,
+      scenes: [
+        {
+          ...sampleVideoDescription.scenes[0],
+          nodes: [
+            {
+              fill: "#38bdf8",
+              height: 48,
+              id: "exiting-rect",
+              exit: { opacity: 0 },
+              exitTransition: { duration: "0.2s" },
+              type: "rect",
+              width: 180,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects transition with invalid duration format", () => {
+    const result = videoDescriptionSchema.safeParse({
+      ...sampleVideoDescription,
+      scenes: [
+        {
+          ...sampleVideoDescription.scenes[0],
+          nodes: [
+            {
+              fill: "#38bdf8",
+              height: 48,
+              id: "bad-transition",
+              initial: { opacity: 0 },
+              transition: { duration: 30 },
+              type: "rect",
+              width: 180,
             },
           ],
         },
@@ -150,13 +217,16 @@ describe("timeline helpers", () => {
 });
 
 describe("animation resolution", () => {
-  it("resolves primitive and explicit animations deterministically", () => {
+  it("resolves primitive and initial/transition animations deterministically", () => {
     const [introScene] = sampleVideoDescription.scenes;
 
     if (!introScene) {
       throw new Error("Sample fixture must include an intro scene.");
     }
 
+    // accent-bar has initial: { scale: 0.9 }, transition: { duration: "0.4s" }
+    // At 60fps, duration = 24 frames. At frame 12, progress ≈ 0.52 → eased ≈ 0.77
+    // scaleX/scaleY = 0.9 + (1 - 0.9) * 0.77 ≈ 0.977
     const accentBarNode = introScene.nodes[2];
 
     if (!accentBarNode) {
@@ -175,20 +245,18 @@ describe("animation resolution", () => {
     expect(resolvedNode.scaleY).toBeGreaterThan(0.95);
   });
 
-  it("lets explicit animate values override primitive-derived values", () => {
+  it("lets initial/transition override primitives for the same property", () => {
+    // SlideIn would animate y from (50+40)=90 → 50.
+    // Explicit initial.y = 10 overrides SlideIn's y animation.
+    // At 30fps, duration "1s" = 30 frames. At frame 15, linear progress = 0.5.
+    // y = 10 + (50 - 10) * 0.5 = 30.
     const resolvedNode = resolveVideoNode(
       {
-        animate: {
-          y: {
-            easing: "linear",
-            end: "1s",
-            from: 10,
-            to: 50,
-          },
-        },
         height: 80,
         id: "override",
+        initial: { y: 10 },
         primitives: ["SlideIn"],
+        transition: { duration: "1s", easing: "linear" },
         type: "rect",
         width: 80,
         x: 10,
@@ -203,31 +271,47 @@ describe("animation resolution", () => {
     expect(resolvedNode.y).toBe(30);
   });
 
-  it("interpolates animated backgrounds in OKLCH", () => {
-    const videoDescription: VideoDescription = {
-      background: "#07111f",
-      fps: 12,
-      height: 360,
-      scenes: [
-        {
-          background: {
-            easing: "linear",
-            end: 8,
-            from: "#3b82f6",
-            to: "#f43f5e",
-          },
-          duration: 9,
-          id: "background-test",
-          nodes: [],
-          startFrame: 0,
-        },
-      ],
-      width: 640,
-    };
+  it("enter and exit animations both apply on the same property", () => {
+    // Enter: opacity 0 → 1 over frames 0–11 (0.2s at 60fps)
+    // Exit:  opacity 1 → 0 over frames 48–59 (0.2s at 60fps, scene = 60 frames)
+    const resolvedAtStart = resolveVideoNode(
+      {
+        exit: { opacity: 0 },
+        exitTransition: { duration: "0.2s" },
+        height: 80,
+        id: "enter-exit",
+        initial: { opacity: 0 },
+        transition: { duration: "0.2s" },
+        type: "rect",
+        width: 80,
+      },
+      60,
+      60,
+      0,
+      0
+    );
 
-    const resolvedFrame = resolveFrame(videoDescription, 4);
+    const resolvedAtMid = resolveVideoNode(
+      {
+        exit: { opacity: 0 },
+        exitTransition: { duration: "0.2s" },
+        height: 80,
+        id: "enter-exit",
+        initial: { opacity: 0 },
+        transition: { duration: "0.2s" },
+        type: "rect",
+        width: 80,
+      },
+      60,
+      60,
+      30,
+      0
+    );
 
-    expect(resolvedFrame.background).toBe(lerpOklch("#3b82f6", "#f43f5e", 0.5));
+    // At frame 0: opacity should be 0 (start of enter animation)
+    expect(resolvedAtStart.opacity).toBe(0);
+    // At frame 30: fully visible (between enter end and exit start)
+    expect(resolvedAtMid.opacity).toBe(1);
   });
 
   it("returns a resolved frame with background and nodes", () => {
@@ -236,6 +320,28 @@ describe("animation resolution", () => {
     expect(resolvedFrame.background).toBeDefined();
     expect(resolvedFrame.nodes.length).toBe(3);
     expect(resolvedFrame.localFrame).toBe(4);
+  });
+
+  it("uses static scene background color", () => {
+    const videoDescription: VideoDescription = {
+      background: "#07111f",
+      fps: 60,
+      height: 360,
+      scenes: [
+        {
+          background: "#3b82f6",
+          duration: 60,
+          id: "static-bg",
+          nodes: [],
+          startFrame: 0,
+        },
+      ],
+      width: 640,
+    };
+
+    const resolvedFrame = resolveFrame(videoDescription, 30);
+
+    expect(resolvedFrame.background).toBe("#3b82f6");
   });
 });
 

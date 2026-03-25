@@ -84,42 +84,14 @@ describe("collectVisualWarnings - off-screen detection", () => {
 });
 
 describe("collectVisualWarnings - zero-dimension detection", () => {
-  it("warns when animate.width starts at zero at frame 0", () => {
+  it("does not warn for a rect with static positive dimensions", () => {
     const warnings = collectVisualWarnings(
       makeDescription([
-        {
-          animate: { width: { end: 30, from: 0, start: 0, to: 100 } },
-          height: 100,
-          id: "r1",
-          type: "rect",
-          width: 100,
-        },
+        { height: 100, id: "r1", type: "rect", width: 100, x: 100, y: 100 },
       ])
     );
 
-    const zeroDimWarnings = warnings.filter((w) =>
-      w.message.includes("zero effective")
-    );
-    expect(zeroDimWarnings.length).toBeGreaterThan(0);
-  });
-
-  it("does not warn when width animation starts after frame 0", () => {
-    const warnings = collectVisualWarnings(
-      makeDescription([
-        {
-          animate: { width: { end: 60, from: 50, start: 30, to: 100 } },
-          height: 100,
-          id: "r1",
-          type: "rect",
-          width: 100,
-        },
-      ])
-    );
-
-    const zeroDimWarnings = warnings.filter((w) =>
-      w.message.includes("zero effective")
-    );
-    expect(zeroDimWarnings.length).toBe(0);
+    expect(warnings.length).toBe(0);
   });
 });
 
