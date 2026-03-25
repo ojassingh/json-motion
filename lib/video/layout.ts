@@ -20,6 +20,21 @@ const getStaticNodeDimensions = (node: VideoNode): Dimensions => {
     return { height: 0, width: node.maxWidth ?? 0 };
   }
 
+  if (node.type === "group") {
+    let maxRight = 0;
+    let maxBottom = 0;
+
+    for (const child of node.children) {
+      const dims = getStaticNodeDimensions(child);
+      const right = (child.x ?? 0) + dims.width;
+      const bottom = (child.y ?? 0) + dims.height;
+      maxRight = Math.max(maxRight, right);
+      maxBottom = Math.max(maxBottom, bottom);
+    }
+
+    return { height: maxBottom, width: maxRight };
+  }
+
   if (node.type === "stack") {
     const childDims = node.children.map(getStaticNodeDimensions);
     const gapTotal = node.gap * Math.max(0, childDims.length - 1);
