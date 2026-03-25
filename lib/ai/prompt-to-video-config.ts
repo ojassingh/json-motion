@@ -1,6 +1,24 @@
 const SUPPORTED_NODE_TYPES = ["group", "rect", "text"] as const;
-const SUPPORTED_EFFECTS = ["fade-in", "scale-in", "slide-in"] as const;
+const SUPPORTED_PRIMITIVES = [
+  "FadeIn",
+  "FadeOut",
+  "SlideIn",
+  "ScaleIn",
+  "Pop",
+  "Wiggle",
+] as const;
 const SUPPORTED_TEXT_ALIGNMENTS = ["left", "center", "right"] as const;
+const SUPPORTED_ANCHORS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "center-left",
+  "center",
+  "center-right",
+  "bottom-left",
+  "bottom-center",
+  "bottom-right",
+] as const;
 const DEFAULT_VIDEO_DIMENSIONS = {
   width: 960,
   height: 540,
@@ -24,19 +42,20 @@ Follow these rules exactly:
 - Keep each scene short, with a total duration between 48 and 120 frames.
 - Use only these node types: ${SUPPORTED_NODE_TYPES.join(", ")}.
 - Do not use image nodes or unsupported node types.
-- Use only these effect names: ${SUPPORTED_EFFECTS.join(", ")}.
+- Use only these primitive names: ${SUPPORTED_PRIMITIVES.join(", ")}.
+- Use only these anchor values: ${SUPPORTED_ANCHORS.join(", ")}.
 - Use only these text alignments: ${SUPPORTED_TEXT_ALIGNMENTS.join(", ")}.
-- Keep animations simple and readable. Prefer fade-in, scale-in, slide-in, or short keyframe motions.
+- Keep animations simple and readable. Prefer "primitives" for common enter motions, or use "animate" with named objects like { "from": 0, "to": 1, "end": 12 }.
 - Use unique IDs for every scene and node.
 - Use hex colors for backgrounds, fills, strokes, and text.
 - Prefer rect and text compositions that can render without external assets.
 - Keep text concise. Headlines should usually be one short sentence or less.
-- "transform.x" and "transform.y" are top-left pixel coordinates for the node, not the node center.
-- "transform.anchorX" and "transform.anchorY" are pixel offsets inside the node, not normalized 0-to-1 values.
-- If a rect with width W and height H should rotate in place around its center, use "anchorX = W / 2" and "anchorY = H / 2".
+- Put "x" and "y" directly on the node. They are top-left pixel coordinates for rects and images.
+- Use the semantic "anchor" field instead of pixel anchor offsets. If an element should rotate around its center, use "anchor": "center".
 - If the user asks for an element in the center or centre of the frame, place the element so its visual center sits at the frame center.
 - Start the first scene at frame 0 and ensure later scenes begin when earlier scenes end.
-- Every animation frame window must fit inside its scene. If a scene lasts N frames, animation endFrame values must be less than N.
+- Use "duration" on scenes, not "durationInFrames".
+- Every animation window must fit inside its scene. If a scene lasts N frames, animation "end" values must be less than N.
 - Never include commentary, markdown, or extra keys outside the schema.
 `.trim();
 

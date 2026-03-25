@@ -6,7 +6,7 @@ import type {
 import { DEFAULT_SCENE_BACKGROUND } from "@/lib/video/config";
 
 export const getSceneEndFrame = (scene: VideoScene): number =>
-  scene.startFrame + scene.durationInFrames - 1;
+  scene.startFrame + scene.duration - 1;
 
 export const getTotalFrameCount = (
   videoDescription: VideoDescription

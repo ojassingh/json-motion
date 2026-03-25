@@ -14,20 +14,18 @@ const sampleSceneResponse: PromptToVideoSceneResponse = {
     scenes: [
       {
         background: "#0b1020",
-        durationInFrames: 72,
+        duration: 72,
         id: "intro",
         nodes: [
           {
             fill: "#121a30",
             height: 340,
             id: "panel",
-            radius: 32,
-            transform: {
-              x: 96,
-              y: 100,
-            },
+            cornerRadius: 32,
             type: "rect",
             width: 768,
+            x: 96,
+            y: 100,
           },
         ],
         startFrame: 0,

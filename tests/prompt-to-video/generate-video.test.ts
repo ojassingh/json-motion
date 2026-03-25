@@ -16,31 +16,27 @@ const sampleVideoDescription: VideoDescription = {
   scenes: [
     {
       background: "#0b1020",
-      durationInFrames: 72,
+      duration: 72,
       id: "intro",
       nodes: [
         {
           fill: "#121a30",
           height: 340,
           id: "panel",
-          radius: 32,
-          transform: {
-            x: 96,
-            y: 100,
-          },
+          cornerRadius: 32,
           type: "rect",
           width: 768,
+          x: 96,
+          y: 100,
         },
         {
           color: "#f8fafc",
-          fontSize: 46,
           id: "headline",
+          size: 46,
           text: "Prompt to video",
-          transform: {
-            x: 144,
-            y: 192,
-          },
           type: "text",
+          x: 144,
+          y: 192,
         },
       ],
       startFrame: 0,

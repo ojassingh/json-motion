@@ -17,19 +17,17 @@ const sampleVideoDescription: VideoDescription = {
   scenes: [
     {
       background: "#0b1020",
-      durationInFrames: 60,
+      duration: 60,
       id: "intro",
       nodes: [
         {
           fill: "#f97316",
           height: 180,
           id: "square",
-          transform: {
-            x: 390,
-            y: 180,
-          },
           type: "rect",
           width: 180,
+          x: 390,
+          y: 180,
         },
       ],
       startFrame: 0,
@@ -74,12 +72,14 @@ describe("generateVideoDescriptionFromPrompt", () => {
     expect(serializedSchema.includes('"prefixItems"')).toBe(false);
   });
 
-  it("documents pixel-based transform semantics for centered rotation prompts", () => {
+  it("documents flat positioning and semantic anchors for prompt generation", () => {
     expect(
-      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes("top-left pixel coordinates")
+      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes(
+        'Put "x" and "y" directly on the node'
+      )
     ).toBe(true);
     expect(
-      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes("pixel offsets inside the node")
+      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes('semantic "anchor" field')
     ).toBe(true);
   });
 
