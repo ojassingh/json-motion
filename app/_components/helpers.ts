@@ -1,0 +1,1 @@
+export const SCENE_JSON_INDENTATION = 2;
