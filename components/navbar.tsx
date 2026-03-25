@@ -9,7 +9,7 @@ export function Navbar() {
           <span className="font-medium">json-motion</span>
         </Link>
         <nav className="flex items-center gap-4 text-muted-foreground text-sm">
-          <Link href="#playground">Playground</Link>
+          <Link href="/playground">Playground</Link>
           <Link href="#examples">Examples</Link>
           <ThemeToggle />
         </nav>
