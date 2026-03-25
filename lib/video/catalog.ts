@@ -171,6 +171,7 @@ ${primitiveList}
 
 Use \`"BlurFadeIn"\` as the default enter animation. Use \`"FadeOut"\` for exit at scene end.
 Use \`"DrawIn"\` on \`functionGraph\` or \`parametricGraph\` nodes to animate drawing from left to right.
+Use \`primitives\` when you want simple defaults.
 
 ### Custom enter animation
 
@@ -190,6 +191,8 @@ Use \`exit\` + \`exitTransition\`. The exit window is anchored to the end of the
 "exit": { "opacity": 0, "y": -20 },
 "exitTransition": { "duration": "0.3s", "easing": "ease-in" }
 \`\`\`
+
+Never combine \`primitives\` with \`initial\`/\`transition\`/\`exit\`/\`exitTransition\` on the same node.
 
 Animatable in initial/exit: \`opacity\`, \`x\`, \`y\`, \`rotate\`, \`scale\`, \`scaleX\`, \`scaleY\`, \`skewX\`, \`skewY\`, \`blur\`
 
@@ -222,7 +225,7 @@ const generatePrompt = (
     "You generate video scene descriptions for a deterministic canvas renderer.",
     "",
     `Canvas: ${width}×${height} @ ${fps}fps`,
-    "Use one or two scenes. Keep each scene between 48 and 120 frames. Start the first scene at frame 0.",
+    'Use one or two scenes. Keep each scene between 1s and 3s. Express duration in seconds (e.g. `"2s"`, `"1.5s"`).',
     "",
     "## Output Rules",
     "",
@@ -230,11 +233,12 @@ const generatePrompt = (
     "- Use unique IDs for every scene and node.",
     "- Use hex colors (#rrggbb or #rgb) for all color values.",
     "- Never include commentary, markdown, or extra keys outside the schema.",
-    "- Never specify raw frame numbers in animations — use seconds via `transition` and `exitTransition`.",
+    '- Express scene duration in seconds (e.g. `"2s"`). Never use raw frame numbers.',
     "- Do not use image nodes.",
     "- Omit `background`, `color`, and `fontFamily` unless intentionally overriding defaults.",
     "  Defaults: background = black, text color = #f8fafc, fontFamily = Inter.",
     "- Use `BlurFadeIn` as the default enter animation unless the user requests something else.",
+    "- Use either `primitives` or custom animation fields on a node. Never use both together.",
     "- Keep text concise. Headlines should be one short sentence or less.",
     "- Only include elements the user explicitly requests.",
     "",

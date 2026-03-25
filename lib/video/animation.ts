@@ -36,6 +36,8 @@ import {
   DEFAULT_TEXT_LINE_HEIGHT_MULTIPLIER,
 } from "@/lib/video/config";
 import { resolveLayout } from "@/lib/video/layout";
+import { resolveMathDimensions } from "@/lib/video/math";
+import type { PreRenderCaches } from "@/lib/video/pre-render";
 import {
   createEmptyResolvedFrame,
   getSceneForFrame,
@@ -814,11 +816,12 @@ const resolveChildNodes = (
   children: VideoNode[],
   fps: number,
   sceneDuration: number,
-  localFrame: number
+  localFrame: number,
+  caches?: PreRenderCaches
 ): ResolvedVideoNode[] =>
   sortResolvedNodes(
     children.map((child, i) =>
-      resolveVideoNode(child, fps, sceneDuration, localFrame, i)
+      resolveVideoNode(child, fps, sceneDuration, localFrame, i, caches)
     )
   );
 
@@ -827,10 +830,17 @@ const resolveGroupNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedGroupNode => ({
   ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
-  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
   type: "group",
 });
 
@@ -839,10 +849,17 @@ const resolveCenterNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedCenterNode => ({
   ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
-  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
   type: "center",
 });
 
@@ -851,10 +868,17 @@ const resolveStackNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedStackNode => ({
   ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
-  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
   type: "stack",
 });
 
@@ -863,10 +887,17 @@ const resolveAlignNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedAlignNode => ({
   ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
-  children: resolveChildNodes(node.children, fps, sceneDuration, localFrame),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
   type: "align",
 });
 
@@ -982,9 +1013,11 @@ const resolveMathNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedMathNode => {
   const animations = normalizeNodeAnimations(node, fps, sceneDuration);
+  const { height, width } = resolveMathDimensions(node, caches?.mathImages);
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     color:
@@ -994,10 +1027,10 @@ const resolveMathNode = (
         localFrame
       ) ?? DEFAULT_MATH_COLOR,
     fontSize: node.fontSize,
-    height: node.height,
+    height,
     latex: node.latex,
     type: "math",
-    width: node.width,
+    width,
   };
 };
 
@@ -1074,19 +1107,48 @@ export const resolveVideoNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedVideoNode => {
   if (node.type === "group") {
-    return resolveGroupNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveGroupNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
   if (node.type === "center") {
-    return resolveCenterNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveCenterNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
   if (node.type === "stack") {
-    return resolveStackNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveStackNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
   if (node.type === "align") {
-    return resolveAlignNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveAlignNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
   if (node.type === "rect") {
     return resolveRectNode(node, fps, sceneDuration, localFrame, sourceIndex);
@@ -1095,7 +1157,14 @@ export const resolveVideoNode = (
     return resolveTextNode(node, fps, sceneDuration, localFrame, sourceIndex);
   }
   if (node.type === "math") {
-    return resolveMathNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveMathNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
   if (node.type === "functionGraph") {
     return resolveFunctionGraphNode(
@@ -1121,11 +1190,12 @@ export const resolveVideoNode = (
 export const resolveSceneNodes = (
   scene: VideoScene,
   fps: number,
-  localFrame: number
+  localFrame: number,
+  caches?: PreRenderCaches
 ): ResolvedVideoNode[] =>
   sortResolvedNodes(
     scene.nodes.map((node, i) =>
-      resolveVideoNode(node, fps, scene.duration, localFrame, i)
+      resolveVideoNode(node, fps, scene.duration, localFrame, i, caches)
     )
   );
 
@@ -1137,7 +1207,8 @@ const resolveSceneBackground = (
 
 export const resolveFrame = (
   videoDescription: VideoDescription,
-  absoluteFrame: number
+  absoluteFrame: number,
+  caches?: PreRenderCaches
 ): ResolvedFrame => {
   const scene = getSceneForFrame(videoDescription, absoluteFrame);
 
@@ -1149,7 +1220,8 @@ export const resolveFrame = (
   const layoutNodes = resolveLayout(
     scene.nodes,
     videoDescription.width,
-    videoDescription.height
+    videoDescription.height,
+    caches
   );
 
   return {
@@ -1159,7 +1231,8 @@ export const resolveFrame = (
     nodes: resolveSceneNodes(
       { ...scene, nodes: layoutNodes },
       videoDescription.fps,
-      localFrame
+      localFrame,
+      caches
     ),
     scene,
   };

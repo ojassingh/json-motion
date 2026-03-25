@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import type { VideoNode } from "@/lib/types/video";
+import type { VideoNode, VideoScene } from "@/lib/types/video";
 import { resolveLayout } from "@/lib/video/layout";
+import { preRenderMathNodes } from "@/lib/video/math";
 
 const FRAME_WIDTH = 960;
 const FRAME_HEIGHT = 540;
@@ -61,6 +62,62 @@ describe("resolveLayout - center", () => {
 
     expect(child.x).toBe(150);
     expect(child.y).toBe(50);
+  });
+
+  it("centers a math node using cached rendered dimensions", async () => {
+    const scene: VideoScene = {
+      duration: 60,
+      id: "scene-1",
+      nodes: [
+        {
+          children: [
+            {
+              fontSize: 56,
+              id: "math-1",
+              latex: "\\sum_{i=1}^{n} x_i",
+              type: "math",
+            },
+          ],
+          id: "center-1",
+          type: "center",
+        },
+      ],
+      startFrame: 0,
+    };
+    const mathImages = await preRenderMathNodes([scene]);
+    const caches = {
+      graphPoints: new Map<string, { x: number; y: number }[]>(),
+      mathImages,
+    };
+
+    const result = resolveLayout(
+      scene.nodes,
+      FRAME_WIDTH,
+      FRAME_HEIGHT,
+      caches
+    );
+    const centerNode = result[0];
+
+    if (centerNode?.type !== "center") {
+      throw new Error("Expected center node.");
+    }
+
+    const child = centerNode.children[0];
+
+    if (child?.type !== "math") {
+      throw new Error("Expected math node.");
+    }
+
+    const image = mathImages.get(`${child.latex}::#f8fafc`);
+
+    if (!image) {
+      throw new Error("Expected pre-rendered math image.");
+    }
+
+    const expectedWidth = image.width * (child.fontSize / image.height);
+
+    expect(child.x).toBeCloseTo(FRAME_WIDTH / 2 - expectedWidth / 2, 5);
+    expect(child.y).toBeCloseTo(FRAME_HEIGHT / 2 - child.fontSize / 2, 5);
   });
 });
 

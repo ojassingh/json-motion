@@ -10,6 +10,7 @@ import type { VideoMathNode, VideoScene } from "@/lib/types/video";
 import { flattenSceneNodes } from "@/lib/video/nodes";
 
 const EX_TO_PX = 8;
+const DEFAULT_MATH_COLOR = "#f8fafc";
 
 const adaptor = liteAdaptor();
 RegisterHTMLHandler(adaptor);
@@ -48,6 +49,36 @@ const latexToSvg = (latex: string, color: string): string => {
   return svgToPixelDimensions(raw).replace(/currentColor/g, color);
 };
 
+export const buildMathCacheKey = (latex: string, color: string): string =>
+  `${latex}::${color}`;
+
+export const resolveMathDimensions = (
+  node: Pick<
+    VideoMathNode,
+    "color" | "fontSize" | "height" | "latex" | "width"
+  >,
+  mathImages?: Map<string, Image>
+): {
+  height: number;
+  width: number;
+} => {
+  const color = node.color ?? DEFAULT_MATH_COLOR;
+  const image = mathImages?.get(buildMathCacheKey(node.latex, color));
+
+  if (image && image.height > 0) {
+    const scale = node.fontSize / image.height;
+    return {
+      height: node.fontSize,
+      width: image.width * scale,
+    };
+  }
+
+  return {
+    height: node.height ?? 0,
+    width: node.width ?? 0,
+  };
+};
+
 export const preRenderMathNodes = async (
   scenes: VideoScene[]
 ): Promise<Map<string, Image>> => {
@@ -56,8 +87,8 @@ export const preRenderMathNodes = async (
 
   const seen = new Set<string>();
   for (const node of mathNodes) {
-    const color = node.color ?? "#f8fafc";
-    const key = `${node.latex}::${color}`;
+    const color = node.color ?? DEFAULT_MATH_COLOR;
+    const key = buildMathCacheKey(node.latex, color);
     if (seen.has(key)) {
       continue;
     }

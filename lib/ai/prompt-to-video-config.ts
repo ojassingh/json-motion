@@ -5,18 +5,18 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import {
-  videoAlignNodeSchema,
+  videoAiAlignNodeSchema,
+  videoAiCenterNodeSchema,
+  videoAiFunctionGraphNodeSchema,
+  videoAiGroupNodeSchema,
+  videoAiMathNodeSchema,
+  videoAiParametricGraphNodeSchema,
+  videoAiRectNodeSchema,
+  videoAiStackNodeSchema,
+  videoAiTextNodeSchema,
   videoAnchorSchema,
-  videoCenterNodeSchema,
   videoEasingSchema,
-  videoFunctionGraphNodeSchema,
-  videoGroupNodeSchema,
-  videoMathNodeSchema,
-  videoParametricGraphNodeSchema,
   videoPrimitiveSchema,
-  videoRectNodeSchema,
-  videoStackNodeSchema,
-  videoTextNodeSchema,
 } from "@/lib/video/schema";
 
 const DEFAULT_VIDEO_DIMENSIONS = {
@@ -37,54 +37,54 @@ export const videoCatalog = defineCatalog({
     align: {
       description:
         "Positions its single child relative to a named edge or corner of the frame. Use for titles, watermarks, or any element that should stay anchored to a frame edge.",
-      propSchema: videoAlignNodeSchema,
+      propSchema: videoAiAlignNodeSchema,
       slots: ["children"],
     },
     center: {
       description:
         "Centers its single child within the frame. Use whenever an element should appear in the middle of the screen.",
-      propSchema: videoCenterNodeSchema,
+      propSchema: videoAiCenterNodeSchema,
       slots: ["children"],
     },
     functionGraph: {
       description:
         "Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use the DrawIn primitive to animate the graph drawing progressively.",
-      propSchema: videoFunctionGraphNodeSchema,
+      propSchema: videoAiFunctionGraphNodeSchema,
       slots: [],
     },
     group: {
       description:
         "Container that groups child nodes under a shared transform. Use for animating multiple elements together.",
-      propSchema: videoGroupNodeSchema,
+      propSchema: videoAiGroupNodeSchema,
       slots: ["children"],
     },
     math: {
       description: "Renders a LaTeX equation. Use for mathematical notation.",
-      propSchema: videoMathNodeSchema,
+      propSchema: videoAiMathNodeSchema,
       slots: [],
     },
     parametricGraph: {
       description:
         "Renders a parametric curve where x and y are both functions of t. Expressions use mathjs syntax in t. Use the DrawIn primitive to animate the graph drawing progressively.",
-      propSchema: videoParametricGraphNodeSchema,
+      propSchema: videoAiParametricGraphNodeSchema,
       slots: [],
     },
     rect: {
       description:
         "Rectangle shape with optional fill color, stroke, and corner radius. The most common building block for motion graphics.",
-      propSchema: videoRectNodeSchema,
+      propSchema: videoAiRectNodeSchema,
       slots: [],
     },
     stack: {
       description:
         "Arranges multiple child nodes in a vertical or horizontal sequence with automatic spacing. Use for lists, bar charts, or any repeating sequence of elements.",
-      propSchema: videoStackNodeSchema,
+      propSchema: videoAiStackNodeSchema,
       slots: ["children"],
     },
     text: {
       description:
         "Renders a text string. Supports multiline text with \\n. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
-      propSchema: videoTextNodeSchema,
+      propSchema: videoAiTextNodeSchema,
       slots: [],
     },
   },

@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { VideoDescription } from "@/lib/types/video";
 import { resolveFrame, resolveVideoNode } from "@/lib/video/animation";
 import { sampleVideoDescription } from "@/lib/video/fixtures/sample-video-description";
+import { preRenderMathNodes } from "@/lib/video/math";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 import { getSceneForFrame, getTotalFrameCount } from "@/lib/video/timeline";
 
@@ -312,6 +313,44 @@ describe("animation resolution", () => {
     expect(resolvedAtStart.opacity).toBe(0);
     // At frame 30: fully visible (between enter end and exit start)
     expect(resolvedAtMid.opacity).toBe(1);
+  });
+
+  it("resolves math node dimensions from the pre-render cache", async () => {
+    const scene = {
+      duration: 60,
+      id: "math-scene",
+      nodes: [
+        {
+          fontSize: 56,
+          id: "math-1",
+          latex: "E = mc^2",
+          type: "math",
+        },
+      ],
+      startFrame: 0,
+    } satisfies VideoDescription["scenes"][number];
+    const mathNode = scene.nodes[0];
+
+    if (!mathNode || mathNode.type !== "math") {
+      throw new Error("Expected math node.");
+    }
+
+    const mathImages = await preRenderMathNodes([scene]);
+    const resolvedNode = resolveVideoNode(mathNode, 60, scene.duration, 0, 0, {
+      graphPoints: new Map<string, { x: number; y: number }[]>(),
+      mathImages,
+    });
+    const image = mathImages.get(`${mathNode.latex}::#f8fafc`);
+
+    if (!image || resolvedNode.type !== "math") {
+      throw new Error("Expected resolved math node.");
+    }
+
+    expect(resolvedNode.height).toBe(56);
+    expect(resolvedNode.width).toBeCloseTo(
+      image.width * (56 / image.height),
+      5
+    );
   });
 
   it("returns a resolved frame with background and nodes", () => {

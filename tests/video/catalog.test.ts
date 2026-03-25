@@ -4,7 +4,7 @@ import {
   videoCatalog,
 } from "@/lib/ai/prompt-to-video-config";
 
-const OPTIONS = { fps: 60, height: 540, width: 960 };
+const OPTIONS = { fps: 60, height: 720, width: 1280 };
 
 describe("videoCatalog.toPrompt", () => {
   it("generates a non-empty prompt", () => {
@@ -53,28 +53,88 @@ describe("videoCatalog.toPrompt", () => {
 
   it("includes canvas dimensions in the prompt", () => {
     const prompt = videoCatalog.toPrompt(OPTIONS);
-    expect(prompt).toContain("960×540");
+    expect(prompt).toContain("1280×720");
     expect(prompt).toContain("60fps");
   });
 });
 
 describe("videoCatalog.getSchema", () => {
-  it("returns a schema that can parse a valid video description", () => {
+  it("returns a schema that can parse valid AI output", () => {
     const schema = videoCatalog.getSchema();
     const result = schema.safeParse({
-      fps: 60,
-      height: 540,
       scenes: [
         {
-          duration: 60,
+          duration: "2s",
           id: "s1",
           nodes: [],
-          startFrame: 0,
         },
       ],
-      width: 960,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects nodes that mix primitives with custom animation fields", () => {
+    const schema = videoCatalog.getSchema();
+    const result = schema.safeParse({
+      scenes: [
+        {
+          duration: "2s",
+          id: "s1",
+          nodes: [
+            {
+              height: 100,
+              id: "rect-1",
+              initial: { opacity: 0 },
+              primitives: ["FadeIn"],
+              transition: { duration: "0.3s" },
+              type: "rect",
+              width: 100,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts nodes that use only custom animation fields", () => {
+    const schema = videoCatalog.getSchema();
+    const result = schema.safeParse({
+      scenes: [
+        {
+          duration: "2s",
+          id: "s1",
+          nodes: [
+            {
+              height: 100,
+              id: "rect-1",
+              initial: { opacity: 0, y: 20 },
+              transition: { duration: "0.3s" },
+              type: "rect",
+              width: 100,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects integer scene durations", () => {
+    const schema = videoCatalog.getSchema();
+    const result = schema.safeParse({
+      scenes: [
+        {
+          duration: 120,
+          id: "s1",
+          nodes: [],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 
@@ -94,5 +154,12 @@ describe("PROMPT_TO_VIDEO_SYSTEM_PROMPT", () => {
     expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain('"top-left"');
     expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain('"center"');
     expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain('"bottom-right"');
+  });
+
+  it("documents seconds-based scene timing and the no-mixing rule", () => {
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain(
+      "Express duration in seconds"
+    );
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("Never use both together");
   });
 });
