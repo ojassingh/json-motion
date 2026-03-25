@@ -1,5 +1,9 @@
 import path from "node:path";
 
+export const DEFAULT_CANVAS_FPS = 60;
+export const DEFAULT_CANVAS_WIDTH = 1280;
+export const DEFAULT_CANVAS_HEIGHT = 720;
+
 export const DEFAULT_SCENE_BACKGROUND = "#000000";
 export const DEFAULT_TEXT_COLOR = "#f8fafc";
 export const DEFAULT_TEXT_FONT_FAMILY = "Inter, Arial, sans-serif";

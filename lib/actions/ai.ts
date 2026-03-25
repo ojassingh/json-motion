@@ -7,6 +7,12 @@ import {
 } from "@/lib/ai/prompt-to-video-config";
 import { AppError, toAppError } from "@/lib/errors";
 import type { VideoDescription } from "@/lib/types/video";
+import {
+  DEFAULT_CANVAS_FPS,
+  DEFAULT_CANVAS_HEIGHT,
+  DEFAULT_CANVAS_WIDTH,
+} from "@/lib/video/config";
+import { videoDescriptionSchema } from "@/lib/video/schema";
 
 export const generateSceneJson = async (
   prompt: string
@@ -35,7 +41,12 @@ export const generateSceneJson = async (
       system: PROMPT_TO_VIDEO_SYSTEM_PROMPT,
     });
 
-    return output;
+    return videoDescriptionSchema.parse({
+      ...output,
+      fps: DEFAULT_CANVAS_FPS,
+      height: DEFAULT_CANVAS_HEIGHT,
+      width: DEFAULT_CANVAS_WIDTH,
+    });
   } catch (error) {
     throw toAppError(error, "GENERATION_ERROR", {
       message: "AI scene generation failed.",

@@ -443,3 +443,13 @@ export const videoDescriptionSchema = z
       });
     }
   });
+
+/**
+ * Schema for AI-generated output — canvas config (fps, width, height) is
+ * intentionally excluded and injected server-side so the model never controls
+ * rendering dimensions.
+ */
+export const videoAiOutputSchema = z.object({
+  background: videoHexColorSchema.optional(),
+  scenes: z.array(videoSceneSchema).min(1),
+});

@@ -1,5 +1,10 @@
 import { defineCatalog } from "@/lib/video/catalog";
 import {
+  DEFAULT_CANVAS_FPS,
+  DEFAULT_CANVAS_HEIGHT,
+  DEFAULT_CANVAS_WIDTH,
+} from "@/lib/video/config";
+import {
   videoAlignNodeSchema,
   videoAnchorSchema,
   videoCenterNodeSchema,
@@ -20,9 +25,9 @@ import {
 } from "@/lib/video/schema";
 
 const DEFAULT_VIDEO_DIMENSIONS = {
-  fps: 60,
-  height: 540,
-  width: 960,
+  fps: DEFAULT_CANVAS_FPS,
+  height: DEFAULT_CANVAS_HEIGHT,
+  width: DEFAULT_CANVAS_WIDTH,
 } as const;
 
 export const PROMPT_TO_VIDEO_MODEL =

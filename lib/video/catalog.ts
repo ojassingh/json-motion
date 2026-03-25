@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { videoDescriptionSchema } from "@/lib/video/schema";
+import { videoAiOutputSchema } from "@/lib/video/schema";
 
 export interface NodeEntry {
   animateSchema?: z.ZodObject<z.ZodRawShape>;
@@ -23,7 +23,7 @@ interface CatalogDefinition {
 }
 
 export interface Catalog {
-  getSchema: () => typeof videoDescriptionSchema;
+  getSchema: () => typeof videoAiOutputSchema;
   toPrompt: (options: CatalogOptions) => string;
 }
 
@@ -228,6 +228,6 @@ const generatePrompt = (
 };
 
 export const defineCatalog = (definition: CatalogDefinition): Catalog => ({
-  getSchema: () => videoDescriptionSchema,
+  getSchema: () => videoAiOutputSchema,
   toPrompt: (options) => generatePrompt(definition, options),
 });
