@@ -9,18 +9,13 @@ import {
   videoAnchorSchema,
   videoCenterNodeSchema,
   videoEasingSchema,
-  videoFunctionGraphAnimateSchema,
   videoFunctionGraphNodeSchema,
-  videoGroupAnimateSchema,
   videoGroupNodeSchema,
   videoMathNodeSchema,
-  videoParametricGraphAnimateSchema,
   videoParametricGraphNodeSchema,
   videoPrimitiveSchema,
-  videoRectAnimateSchema,
   videoRectNodeSchema,
   videoStackNodeSchema,
-  videoTextAnimateSchema,
   videoTextNodeSchema,
 } from "@/lib/video/schema";
 
@@ -52,14 +47,12 @@ export const videoCatalog = defineCatalog({
       slots: ["children"],
     },
     functionGraph: {
-      animateSchema: videoFunctionGraphAnimateSchema,
       description:
-        "Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.).",
+        "Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use the DrawIn primitive to animate the graph drawing progressively.",
       propSchema: videoFunctionGraphNodeSchema,
       slots: [],
     },
     group: {
-      animateSchema: videoGroupAnimateSchema,
       description:
         "Container that groups child nodes under a shared transform. Use for animating multiple elements together.",
       propSchema: videoGroupNodeSchema,
@@ -71,28 +64,24 @@ export const videoCatalog = defineCatalog({
       slots: [],
     },
     parametricGraph: {
-      animateSchema: videoParametricGraphAnimateSchema,
       description:
-        "Renders a parametric curve where x and y are both functions of t. Expressions use mathjs syntax in t.",
+        "Renders a parametric curve where x and y are both functions of t. Expressions use mathjs syntax in t. Use the DrawIn primitive to animate the graph drawing progressively.",
       propSchema: videoParametricGraphNodeSchema,
       slots: [],
     },
     rect: {
-      animateSchema: videoRectAnimateSchema,
       description:
         "Rectangle shape with optional fill color, stroke, and corner radius. The most common building block for motion graphics.",
       propSchema: videoRectNodeSchema,
       slots: [],
     },
     stack: {
-      animateSchema: videoGroupAnimateSchema,
       description:
         "Arranges multiple child nodes in a vertical or horizontal sequence with automatic spacing. Use for lists, bar charts, or any repeating sequence of elements.",
       propSchema: videoStackNodeSchema,
       slots: ["children"],
     },
     text: {
-      animateSchema: videoTextAnimateSchema,
       description:
         "Renders a text string. Supports multiline text with \\n. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
       propSchema: videoTextNodeSchema,

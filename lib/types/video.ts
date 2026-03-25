@@ -2,18 +2,17 @@ import type { z } from "zod";
 
 import type {
   videoAnchorSchema,
-  videoColorAnimationValueSchema,
   videoDescriptionSchema,
   videoEasingSchema,
   videoHexColorSchema,
   videoImageFitSchema,
   videoNodeSchema,
-  videoNumericAnimationValueSchema,
+  videoNodeStateSchema,
+  videoNodeTransitionSchema,
   videoPrimitiveSchema,
   videoSceneSchema,
   videoStackAlignSchema,
   videoTextAlignSchema,
-  videoTimeSchema,
 } from "@/lib/video/schema";
 
 export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
@@ -22,23 +21,12 @@ export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;
 export type VideoImageFit = z.infer<typeof videoImageFitSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
+export type VideoNodeState = z.infer<typeof videoNodeStateSchema>;
+export type VideoNodeTransition = z.infer<typeof videoNodeTransitionSchema>;
 export type VideoPrimitive = z.infer<typeof videoPrimitiveSchema>;
-export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;
-export type VideoColorAnimationValue = z.infer<
-  typeof videoColorAnimationValueSchema
->;
-export type VideoNumericAnimationValue = z.infer<
-  typeof videoNumericAnimationValueSchema
->;
-type ExtractAnimationStep<TValue> =
-  TValue extends Array<infer TStep> ? TStep : TValue;
-export type VideoColorAnimationStep =
-  ExtractAnimationStep<VideoColorAnimationValue>;
-export type VideoNumericAnimationStep =
-  ExtractAnimationStep<VideoNumericAnimationValue>;
 export type VideoScene = z.infer<typeof videoSceneSchema>;
+export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;
 export type VideoTextAlign = z.infer<typeof videoTextAlignSchema>;
-export type VideoTimeValue = z.infer<typeof videoTimeSchema>;
 
 export type VideoAlignNode = Extract<VideoNode, { type: "align" }>;
 export type VideoCenterNode = Extract<VideoNode, { type: "center" }>;

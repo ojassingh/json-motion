@@ -3,7 +3,6 @@ import { z } from "zod";
 import { videoAiOutputSchema } from "@/lib/video/schema";
 
 export interface NodeEntry {
-  animateSchema?: z.ZodObject<z.ZodRawShape>;
   description: string;
   propSchema: z.ZodObject<z.ZodRawShape>;
   slots: string[];
@@ -76,12 +75,27 @@ const describeZodType = (schema: z.ZodTypeAny): string => {
 const isOptionalField = (schema: z.ZodTypeAny): boolean =>
   schema instanceof z.ZodOptional;
 
+// These are universal to all nodes and documented in the shared sections below.
 const SKIPPED_PROPS = new Set([
-  "type",
-  "id",
-  "animate",
+  "anchor",
   "children",
+  "exit",
+  "exitTransition",
+  "id",
+  "initial",
+  "opacity",
   "primitives",
+  "rotate",
+  "scale",
+  "scaleX",
+  "scaleY",
+  "skewX",
+  "skewY",
+  "transition",
+  "type",
+  "x",
+  "y",
+  "zIndex",
 ]);
 
 const generateNodeSection = (name: string, entry: NodeEntry): string => {
@@ -123,29 +137,6 @@ const generateNodeSection = (name: string, entry: NodeEntry): string => {
     lines.push("");
   }
 
-  if (entry.animateSchema) {
-    const animShape = entry.animateSchema.shape as Record<string, z.ZodTypeAny>;
-    const animProps = Object.keys(animShape).filter(
-      (k) =>
-        ![
-          "opacity",
-          "rotate",
-          "scale",
-          "scaleX",
-          "scaleY",
-          "skewX",
-          "skewY",
-          "x",
-          "y",
-        ].includes(k)
-    );
-
-    if (animProps.length > 0) {
-      lines.push(`Animate (type-specific): ${animProps.join(", ")}`);
-      lines.push("");
-    }
-  }
-
   return lines.join("\n");
 };
 
@@ -161,6 +152,65 @@ Use layout primitives instead of computing pixel coordinates manually:
 Use raw \`x\`/\`y\` coordinates only when precise pixel placement is explicitly needed.
 Do NOT compute center coordinates as \`width/2\`, \`height/2\` — use \`center\` instead.
 `.trim();
+
+const ANIMATION_GUIDANCE = `
+## Animations
+
+### Primitives (preferred)
+
+Use \`primitives\` for common effects — single words, never fails:
+`.trim();
+
+const generateAnimationSection = (definition: CatalogDefinition): string => {
+  const primitiveList = (definition.primitives.options as string[])
+    .map((v) => `"${v}"`)
+    .join(", ");
+
+  return `${ANIMATION_GUIDANCE}
+${primitiveList}
+
+Use \`"BlurFadeIn"\` as the default enter animation. Use \`"FadeOut"\` for exit at scene end.
+Use \`"DrawIn"\` on \`functionGraph\` or \`parametricGraph\` nodes to animate drawing from left to right.
+
+### Custom enter animation
+
+Use \`initial\` + \`transition\` for custom entry. \`initial\` is the node's starting state;
+the node's own props are the resting target. The engine computes all frames.
+
+\`\`\`json
+"initial": { "opacity": 0, "y": 30, "blur": 8 },
+"transition": { "duration": "0.4s", "delay": "0.2s", "easing": "ease-out" }
+\`\`\`
+
+### Custom exit animation
+
+Use \`exit\` + \`exitTransition\`. The exit window is anchored to the end of the scene.
+
+\`\`\`json
+"exit": { "opacity": 0, "y": -20 },
+"exitTransition": { "duration": "0.3s", "easing": "ease-in" }
+\`\`\`
+
+Animatable in initial/exit: \`opacity\`, \`x\`, \`y\`, \`rotate\`, \`scale\`, \`scaleX\`, \`scaleY\`, \`skewX\`, \`skewY\`, \`blur\`
+
+Transition fields: \`duration\` (required, e.g. \`"0.3s"\`), \`delay\` (optional), \`easing\` (optional)
+Easing values: ${(definition.easings.options as string[]).map((v) => `"${v}"`).join(", ")}
+
+### Staggered multi-element entrance
+
+Increment \`transition.delay\` per element — no frame math needed:
+\`\`\`json
+{ "transition": { "delay": "0s",    "duration": "0.3s" } },
+{ "transition": { "delay": "0.15s", "duration": "0.3s" } },
+{ "transition": { "delay": "0.3s",  "duration": "0.3s" } }
+\`\`\`
+
+### Sequential content
+
+Use **multiple scenes** for elements that appear one after another.
+Each scene gets its own nodes with \`"BlurFadeIn"\` / \`"FadeOut"\` primitives.
+Never try to coordinate sequential elements within a single scene using delayed animations.`;
+};
 
 const generatePrompt = (
   definition: CatalogDefinition,
@@ -180,7 +230,7 @@ const generatePrompt = (
     "- Use unique IDs for every scene and node.",
     "- Use hex colors (#rrggbb or #rgb) for all color values.",
     "- Never include commentary, markdown, or extra keys outside the schema.",
-    "- Every animation window must fit inside its scene duration.",
+    "- Never specify raw frame numbers in animations — use seconds via `transition` and `exitTransition`.",
     "- Do not use image nodes.",
     "- Omit `background`, `color`, and `fontFamily` unless intentionally overriding defaults.",
     "  Defaults: background = black, text color = #f8fafc, fontFamily = Inter.",
@@ -199,28 +249,14 @@ const generatePrompt = (
   sections.push("## Shared Properties (all nodes)");
   sections.push("");
   sections.push(
-    "All nodes support: `id` (string, required), `x` (number), `y` (number), `anchor` (default: center), `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `zIndex`, `primitives`"
+    "All nodes support: `id` (string, required), `x` (number), `y` (number), `anchor` (default: center), `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `zIndex`, `primitives`, `initial`, `transition`, `exit`, `exitTransition`"
   );
   sections.push("");
   sections.push(
     `Anchor values: ${(definition.anchors.options as string[]).map((v) => `"${v}"`).join(", ")}`
   );
   sections.push("");
-  sections.push("## Animations");
-  sections.push("");
-  sections.push(
-    "Use `primitives` array for common enter/exit motions. Available primitives:"
-  );
-  sections.push(
-    (definition.primitives.options as string[]).map((v) => `"${v}"`).join(", ")
-  );
-  sections.push("");
-  sections.push(
-    'Use `animate` object for custom animations: `{ from: 0, to: 1, start: 0, end: 30, easing: "ease-out" }`'
-  );
-  sections.push(
-    `Easing values: ${(definition.easings.options as string[]).map((v) => `"${v}"`).join(", ")}`
-  );
+  sections.push(generateAnimationSection(definition));
   sections.push("");
   sections.push(LAYOUT_GUIDANCE);
 

@@ -36,11 +36,12 @@ export const videoEasingSchema = z.enum([
 
 export const videoPrimitiveSchema = z.enum([
   "BlurFadeIn",
+  "DrawIn",
   "FadeIn",
   "FadeOut",
-  "SlideIn",
-  "ScaleIn",
   "Pop",
+  "ScaleIn",
+  "SlideIn",
   "Wiggle",
 ]);
 
@@ -51,59 +52,34 @@ export const videoHexColorSchema = z
   .string()
   .trim()
   .regex(hexColorPattern, "Colors must use hex notation.");
-export const videoTimeSchema = z.union([
-  frameSchema,
-  z.string().trim().regex(secondsPattern, 'Time strings must end in "s".'),
-]);
 
-const createAnimationValueSchema = <TStepSchema extends z.ZodTypeAny>(
-  stepSchema: TStepSchema
-) => z.union([stepSchema, z.array(stepSchema).min(1)]);
-
-const createAnimationStepSchema = <TValueSchema extends z.ZodType>(
-  valueSchema: TValueSchema
-) =>
-  z
-    .object({
-      easing: videoEasingSchema.optional(),
-      end: videoTimeSchema,
-      from: valueSchema,
-      start: videoTimeSchema.optional(),
-      to: valueSchema,
-    })
-    .strict();
-
-const numericAnimationStepSchema =
-  createAnimationStepSchema(finiteNumberSchema);
-const colorAnimationStepSchema = createAnimationStepSchema(videoHexColorSchema);
-
-export const videoNumericAnimationValueSchema = createAnimationValueSchema(
-  numericAnimationStepSchema
-);
-export const videoColorAnimationValueSchema = createAnimationValueSchema(
-  colorAnimationStepSchema
-);
-
-const videoBaseAnimateSchema = z
+/**
+ * Timing for enter or exit animations. All durations are in seconds (e.g. "0.3s").
+ * The engine converts to frames — never specify raw frame numbers.
+ */
+export const videoNodeTransitionSchema = z
   .object({
-    opacity: videoNumericAnimationValueSchema.optional(),
-    rotate: videoNumericAnimationValueSchema.optional(),
-    scale: videoNumericAnimationValueSchema.optional(),
-    scaleX: videoNumericAnimationValueSchema.optional(),
-    scaleY: videoNumericAnimationValueSchema.optional(),
-    skewX: videoNumericAnimationValueSchema.optional(),
-    skewY: videoNumericAnimationValueSchema.optional(),
-    x: videoNumericAnimationValueSchema.optional(),
-    y: videoNumericAnimationValueSchema.optional(),
+    delay: z
+      .string()
+      .trim()
+      .regex(secondsPattern, 'Delay must be a seconds string, e.g. "0.2s".')
+      .optional(),
+    duration: z
+      .string()
+      .trim()
+      .regex(secondsPattern, 'Duration must be a seconds string, e.g. "0.3s".'),
+    easing: videoEasingSchema.optional(),
   })
   .strict();
 
-const videoNodeBaseSchema = z
+/**
+ * The starting state (initial) or ending state (exit) of a node's animation.
+ * All properties are optional deltas from the node's resting values.
+ */
+export const videoNodeStateSchema = z
   .object({
-    anchor: videoAnchorSchema.optional(),
-    id: idSchema,
+    blur: nonNegativeNumberSchema.optional(),
     opacity: finiteNumberSchema.optional(),
-    primitives: z.array(videoPrimitiveSchema).optional(),
     rotate: finiteNumberSchema.optional(),
     scale: finiteNumberSchema.optional(),
     scaleX: finiteNumberSchema.optional(),
@@ -112,76 +88,39 @@ const videoNodeBaseSchema = z
     skewY: finiteNumberSchema.optional(),
     x: finiteNumberSchema.optional(),
     y: finiteNumberSchema.optional(),
+  })
+  .strict();
+
+const videoNodeBaseSchema = z
+  .object({
+    anchor: videoAnchorSchema.optional(),
+    exit: videoNodeStateSchema.optional(),
+    exitTransition: videoNodeTransitionSchema.optional(),
+    id: idSchema,
+    initial: videoNodeStateSchema.optional(),
+    opacity: finiteNumberSchema.optional(),
+    primitives: z.array(videoPrimitiveSchema).optional(),
+    rotate: finiteNumberSchema.optional(),
+    scale: finiteNumberSchema.optional(),
+    scaleX: finiteNumberSchema.optional(),
+    scaleY: finiteNumberSchema.optional(),
+    skewX: finiteNumberSchema.optional(),
+    skewY: finiteNumberSchema.optional(),
+    transition: videoNodeTransitionSchema.optional(),
+    x: finiteNumberSchema.optional(),
+    y: finiteNumberSchema.optional(),
     zIndex: z.number().int().optional(),
   })
   .strict();
 
-export const videoRectAnimateSchema = videoBaseAnimateSchema
-  .extend({
-    cornerRadius: videoNumericAnimationValueSchema.optional(),
-    fill: videoColorAnimationValueSchema.optional(),
-    height: videoNumericAnimationValueSchema.optional(),
-    stroke: videoColorAnimationValueSchema.optional(),
-    strokeWidth: videoNumericAnimationValueSchema.optional(),
-    width: videoNumericAnimationValueSchema.optional(),
-  })
-  .strict();
-
-export const videoTextAnimateSchema = videoBaseAnimateSchema
-  .extend({
-    color: videoColorAnimationValueSchema.optional(),
-    size: videoNumericAnimationValueSchema.optional(),
-  })
-  .strict();
-
-const videoImageAnimateSchema = videoBaseAnimateSchema
-  .extend({
-    height: videoNumericAnimationValueSchema.optional(),
-    width: videoNumericAnimationValueSchema.optional(),
-  })
-  .strict();
-
-export const videoGroupAnimateSchema = videoBaseAnimateSchema;
-
-const videoMathAnimateSchema = videoBaseAnimateSchema;
-
-export const videoFunctionGraphAnimateSchema = videoBaseAnimateSchema
-  .extend({
-    color: videoColorAnimationValueSchema.optional(),
-    drawProgress: videoNumericAnimationValueSchema.optional(),
-    strokeWidth: videoNumericAnimationValueSchema.optional(),
-  })
-  .strict();
-
-export const videoParametricGraphAnimateSchema = videoBaseAnimateSchema
-  .extend({
-    color: videoColorAnimationValueSchema.optional(),
-    drawProgress: videoNumericAnimationValueSchema.optional(),
-    strokeWidth: videoNumericAnimationValueSchema.optional(),
-  })
-  .strict();
-
 type VideoNodeBaseSchemaType = z.infer<typeof videoNodeBaseSchema>;
-type VideoGroupAnimateSchemaType = z.infer<typeof videoGroupAnimateSchema>;
-type VideoRectAnimateSchemaType = z.infer<typeof videoRectAnimateSchema>;
-type VideoTextAnimateSchemaType = z.infer<typeof videoTextAnimateSchema>;
-type VideoImageAnimateSchemaType = z.infer<typeof videoImageAnimateSchema>;
-type VideoMathAnimateSchemaType = z.infer<typeof videoMathAnimateSchema>;
-type VideoFunctionGraphAnimateSchemaType = z.infer<
-  typeof videoFunctionGraphAnimateSchema
->;
-type VideoParametricGraphAnimateSchemaType = z.infer<
-  typeof videoParametricGraphAnimateSchema
->;
 
 interface VideoGroupNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoGroupAnimateSchemaType;
   children: VideoNodeSchemaType[];
   type: "group";
 }
 
 interface VideoRectNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoRectAnimateSchemaType;
   cornerRadius?: number;
   fill?: string;
   height: number;
@@ -192,7 +131,6 @@ interface VideoRectNodeSchemaType extends VideoNodeBaseSchemaType {
 }
 
 interface VideoTextNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoTextAnimateSchemaType;
   color?: string;
   fontFamily?: string;
   fontWeight?: number | string;
@@ -205,7 +143,6 @@ interface VideoTextNodeSchemaType extends VideoNodeBaseSchemaType {
 }
 
 interface VideoImageNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoImageAnimateSchemaType;
   fit?: z.infer<typeof videoImageFitSchema>;
   height: number;
   src: string;
@@ -214,7 +151,6 @@ interface VideoImageNodeSchemaType extends VideoNodeBaseSchemaType {
 }
 
 export interface VideoMathNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoMathAnimateSchemaType;
   color?: string;
   fontSize: number;
   height: number;
@@ -225,7 +161,6 @@ export interface VideoMathNodeSchemaType extends VideoNodeBaseSchemaType {
 
 export interface VideoFunctionGraphNodeSchemaType
   extends VideoNodeBaseSchemaType {
-  animate?: VideoFunctionGraphAnimateSchemaType;
   color?: string;
   drawProgress?: number;
   fn: string;
@@ -241,7 +176,6 @@ export interface VideoFunctionGraphNodeSchemaType
 
 export interface VideoParametricGraphNodeSchemaType
   extends VideoNodeBaseSchemaType {
-  animate?: VideoParametricGraphAnimateSchemaType;
   color?: string;
   drawProgress?: number;
   fnX: string;
@@ -255,7 +189,6 @@ export interface VideoParametricGraphNodeSchemaType
 }
 
 interface VideoCenterNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoGroupAnimateSchemaType;
   children: VideoNodeSchemaType[];
   height?: number;
   type: "center";
@@ -264,7 +197,6 @@ interface VideoCenterNodeSchemaType extends VideoNodeBaseSchemaType {
 
 interface VideoStackNodeSchemaType extends VideoNodeBaseSchemaType {
   align?: z.infer<typeof videoStackAlignSchema>;
-  animate?: VideoGroupAnimateSchemaType;
   children: VideoNodeSchemaType[];
   direction: "vertical" | "horizontal";
   gap: number;
@@ -272,7 +204,6 @@ interface VideoStackNodeSchemaType extends VideoNodeBaseSchemaType {
 }
 
 interface VideoAlignNodeSchemaType extends VideoNodeBaseSchemaType {
-  animate?: VideoGroupAnimateSchemaType;
   children: VideoNodeSchemaType[];
   padding?: number;
   position: z.infer<typeof videoAnchorSchema>;
@@ -307,13 +238,11 @@ export const videoNodeSchema: z.ZodType<VideoNodeSchemaType> = z.lazy(() =>
 );
 
 export const videoGroupNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoGroupAnimateSchema.optional(),
   children: z.array(videoNodeSchema).min(1),
   type: z.literal("group"),
 });
 
 export const videoCenterNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoGroupAnimateSchema.optional(),
   children: z.array(videoNodeSchema).min(1).max(1),
   height: positiveNumberSchema.optional(),
   type: z.literal("center"),
@@ -322,7 +251,6 @@ export const videoCenterNodeSchema = videoNodeBaseSchema.extend({
 
 export const videoStackNodeSchema = videoNodeBaseSchema.extend({
   align: videoStackAlignSchema.optional(),
-  animate: videoGroupAnimateSchema.optional(),
   children: z.array(videoNodeSchema).min(1),
   direction: z.enum(["vertical", "horizontal"]),
   gap: nonNegativeNumberSchema,
@@ -330,7 +258,6 @@ export const videoStackNodeSchema = videoNodeBaseSchema.extend({
 });
 
 export const videoAlignNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoGroupAnimateSchema.optional(),
   children: z.array(videoNodeSchema).min(1).max(1),
   padding: nonNegativeNumberSchema.optional(),
   position: videoAnchorSchema,
@@ -338,7 +265,6 @@ export const videoAlignNodeSchema = videoNodeBaseSchema.extend({
 });
 
 export const videoRectNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoRectAnimateSchema.optional(),
   cornerRadius: nonNegativeNumberSchema.optional(),
   fill: videoHexColorSchema.optional(),
   height: positiveNumberSchema,
@@ -349,7 +275,6 @@ export const videoRectNodeSchema = videoNodeBaseSchema.extend({
 });
 
 export const videoTextNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoTextAnimateSchema.optional(),
   color: videoHexColorSchema.optional(),
   fontFamily: z.string().trim().min(1).optional(),
   fontWeight: z
@@ -364,7 +289,6 @@ export const videoTextNodeSchema = videoNodeBaseSchema.extend({
 });
 
 const videoImageNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoImageAnimateSchema.optional(),
   fit: videoImageFitSchema.optional(),
   height: positiveNumberSchema,
   src: z.string().trim().min(1),
@@ -373,7 +297,6 @@ const videoImageNodeSchema = videoNodeBaseSchema.extend({
 });
 
 export const videoMathNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoMathAnimateSchema.optional(),
   color: videoHexColorSchema.optional(),
   fontSize: positiveNumberSchema,
   height: positiveNumberSchema,
@@ -385,7 +308,6 @@ export const videoMathNodeSchema = videoNodeBaseSchema.extend({
 const rangeSchema = z.array(finiteNumberSchema).length(2);
 
 export const videoFunctionGraphNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoFunctionGraphAnimateSchema.optional(),
   color: videoHexColorSchema.optional(),
   drawProgress: z.number().min(0).max(1).optional(),
   fn: z.string().trim().min(1),
@@ -400,7 +322,6 @@ export const videoFunctionGraphNodeSchema = videoNodeBaseSchema.extend({
 });
 
 export const videoParametricGraphNodeSchema = videoNodeBaseSchema.extend({
-  animate: videoParametricGraphAnimateSchema.optional(),
   color: videoHexColorSchema.optional(),
   drawProgress: z.number().min(0).max(1).optional(),
   fnX: z.string().trim().min(1),
@@ -415,9 +336,7 @@ export const videoParametricGraphNodeSchema = videoNodeBaseSchema.extend({
 
 export const videoSceneSchema = z
   .object({
-    background: z
-      .union([videoHexColorSchema, videoColorAnimationValueSchema])
-      .optional(),
+    background: videoHexColorSchema.optional(),
     duration: z.number().int().positive(),
     id: idSchema,
     nodes: z.array(videoNodeSchema),
