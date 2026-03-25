@@ -7,6 +7,7 @@ import { SVG } from "mathjax-full/js/output/svg.js";
 import { type Image, loadImage } from "skia-canvas";
 import { AppError, toAppError } from "@/lib/errors";
 import type { VideoMathNode, VideoScene } from "@/lib/types/video";
+import { flattenSceneNodes } from "@/lib/video/nodes";
 
 const EX_TO_PX = 8;
 
@@ -18,26 +19,10 @@ const mathDoc = mathjax.document("", {
   OutputJax: new SVG({ fontCache: "none" }),
 });
 
-const collectMathNodes = (scenes: VideoScene[]): VideoMathNode[] => {
-  const nodes: VideoMathNode[] = [];
-
-  for (const scene of scenes) {
-    const stack = [...scene.nodes];
-    while (stack.length > 0) {
-      const node = stack.pop();
-      if (!node) {
-        continue;
-      }
-      if (node.type === "math") {
-        nodes.push(node);
-      } else if (node.type === "group") {
-        stack.push(...node.children);
-      }
-    }
-  }
-
-  return nodes;
-};
+const collectMathNodes = (scenes: VideoScene[]): VideoMathNode[] =>
+  flattenSceneNodes(scenes).filter(
+    (node): node is VideoMathNode => node.type === "math"
+  );
 
 const svgToPixelDimensions = (svg: string): string =>
   svg
