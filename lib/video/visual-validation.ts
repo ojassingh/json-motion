@@ -1,10 +1,8 @@
 import type {
   VideoDescription,
   VideoNode,
-  VideoNumericAnimationValue,
   VideoScene,
 } from "@/lib/types/video";
-import { normalizeNumericAnimationValue } from "@/lib/video/animation";
 
 export interface VisualWarning {
   message: string;
@@ -80,67 +78,11 @@ const checkOffScreen = (
   };
 };
 
-const resolveNumericAtFrame0 = (
-  baseValue: number,
-  animValue: VideoNumericAnimationValue | undefined,
-  fps: number
-): number => {
-  if (!animValue) {
-    return baseValue;
-  }
-
-  const segments = normalizeNumericAnimationValue(animValue, fps);
-
-  if (segments.length === 0) {
-    return baseValue;
-  }
-
-  const first = segments[0];
-
-  if (!first || first.startFrame > 0) {
-    return baseValue;
-  }
-
-  return first.from;
-};
-
-const checkZeroDimension = (
-  node: DimensionedNode,
-  fps: number
-): VisualWarning | null => {
-  const widthAnim = (
-    node.animate as { width?: VideoNumericAnimationValue } | undefined
-  )?.width;
-  const heightAnim = (
-    node.animate as { height?: VideoNumericAnimationValue } | undefined
-  )?.height;
-
-  if (!(widthAnim || heightAnim)) {
-    return null;
-  }
-
-  const effectiveWidth = resolveNumericAtFrame0(node.width, widthAnim, fps);
-  const effectiveHeight = resolveNumericAtFrame0(node.height, heightAnim, fps);
-
-  if (effectiveWidth > 0 && effectiveHeight > 0) {
-    return null;
-  }
-
-  const zeroDimension = effectiveWidth <= 0 ? "width" : "height";
-
-  return {
-    message: `Node "${node.id}" has zero effective ${zeroDimension} at frame 0.`,
-    nodeId: node.id,
-    severity: "warn",
-  };
-};
-
 const collectNodeWarnings = (
   node: VideoNode,
   scene: VideoScene,
   frameWidth: number,
-  frameHeight: number,
-  fps: number
+  frameHeight: number
 ): VisualWarning[] => {
   const warnings: VisualWarning[] = [];
 
@@ -148,11 +90,6 @@ const collectNodeWarnings = (
     const offScreen = checkOffScreen(node, frameWidth, frameHeight);
     if (offScreen) {
       warnings.push(offScreen);
-    }
-
-    const zeroDim = checkZeroDimension(node, fps);
-    if (zeroDim) {
-      warnings.push(zeroDim);
     }
   }
 
@@ -164,7 +101,7 @@ const collectNodeWarnings = (
   ) {
     for (const child of node.children) {
       warnings.push(
-        ...collectNodeWarnings(child, scene, frameWidth, frameHeight, fps)
+        ...collectNodeWarnings(child, scene, frameWidth, frameHeight)
       );
     }
   }
@@ -175,12 +112,12 @@ const collectNodeWarnings = (
 export const collectVisualWarnings = (
   videoDescription: VideoDescription
 ): VisualWarning[] => {
-  const { fps, height, width } = videoDescription;
+  const { height, width } = videoDescription;
   const warnings: VisualWarning[] = [];
 
   for (const scene of videoDescription.scenes) {
     for (const node of scene.nodes) {
-      warnings.push(...collectNodeWarnings(node, scene, width, height, fps));
+      warnings.push(...collectNodeWarnings(node, scene, width, height));
     }
   }
 

@@ -6,19 +6,7 @@ export const sampleVideoDescription: VideoDescription = {
   height: 360,
   scenes: [
     {
-      background: [
-        {
-          end: 11,
-          from: "#07111f",
-          to: "#0f172a",
-        },
-        {
-          end: 23,
-          from: "#0f172a",
-          start: 12,
-          to: "#111827",
-        },
-      ],
+      background: "#0f172a",
       duration: 24,
       id: "intro",
       nodes: [
@@ -44,17 +32,12 @@ export const sampleVideoDescription: VideoDescription = {
           y: 112,
         },
         {
-          animate: {
-            scale: {
-              end: 23,
-              from: 0.9,
-              to: 1.05,
-            },
-          },
           cornerRadius: 999,
           fill: "#38bdf8",
           height: 48,
           id: "accent-bar",
+          initial: { scale: 0.9 },
+          transition: { duration: "0.4s", easing: "ease-out" },
           type: "rect",
           width: 180,
           x: 88,
