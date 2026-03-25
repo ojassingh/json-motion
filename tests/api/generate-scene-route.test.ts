@@ -74,11 +74,15 @@ describe("POST /api/generate-scene", () => {
       aiModule,
       "generateVideoDescriptionFromPrompt"
     );
+    const consoleError = spyOn(console, "error").mockImplementation(
+      () => undefined
+    );
 
     const response = await POST(createRequest("{"));
 
     expect(response.status).toBe(400);
     expect(generateVideoDescriptionFromPrompt).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
       error: {
         code: "VALIDATION_ERROR",
@@ -93,6 +97,9 @@ describe("POST /api/generate-scene", () => {
       aiModule,
       "generateVideoDescriptionFromPrompt"
     );
+    const consoleError = spyOn(console, "error").mockImplementation(
+      () => undefined
+    );
     generateVideoDescriptionFromPrompt.mockRejectedValueOnce(
       new AppError("GENERATION_ERROR", {
         details: ["schema mismatch"],
@@ -104,6 +111,15 @@ describe("POST /api/generate-scene", () => {
     );
 
     expect(response.status).toBe(502);
+    expect(consoleError).toHaveBeenCalledWith(
+      "POST /api/generate-scene failed",
+      {
+        code: "GENERATION_ERROR",
+        details: ["schema mismatch"],
+        message: "AI scene generation failed.",
+        status: 502,
+      }
+    );
     await expect(response.json()).resolves.toEqual({
       error: {
         code: "GENERATION_ERROR",

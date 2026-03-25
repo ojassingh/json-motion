@@ -45,6 +45,15 @@ export async function POST(request: Request): Promise<Response> {
             message: "Prompt-to-scene request failed unexpectedly.",
           });
 
+    if (appError.status >= 500) {
+      console.error("POST /api/generate-scene failed", {
+        code: appError.code,
+        details: appError.details,
+        message: appError.message,
+        status: appError.status,
+      });
+    }
+
     return NextResponse.json(toAppErrorResponse(appError), {
       status: appError.status,
     });
