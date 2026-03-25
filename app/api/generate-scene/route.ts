@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateVideoDescriptionFromPrompt } from "@/lib/ai/generate-video-description";
+import { generateSceneJson } from "@/lib/actions/ai";
 import {
   createValidationError,
   toAppError,
@@ -30,9 +30,7 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const scene = await generateVideoDescriptionFromPrompt(
-      parsedRequest.data.prompt
-    );
+    const scene = await generateSceneJson(parsedRequest.data.prompt);
 
     return NextResponse.json({ scene });
   } catch (error) {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { AppError } from "@/lib/errors";
 import type { RenderedVideoResult, VideoDescription } from "@/lib/types/video";
 
-const aiModule = await import("@/lib/ai/generate-video-description");
+const aiModule = await import("@/lib/actions/ai");
 const promptToVideoModule = await import(
   "@/lib/prompt-to-video/generate-video"
 );
@@ -62,10 +62,7 @@ describe("generateVideoFromPrompt", () => {
   });
 
   it("rejects blank prompts before generation starts", async () => {
-    const generateVideoDescriptionFromPrompt = spyOn(
-      aiModule,
-      "generateVideoDescriptionFromPrompt"
-    );
+    const generateSceneJson = spyOn(aiModule, "generateSceneJson");
 
     await expect(
       promptToVideoModule.generateVideoFromPrompt({ prompt: "   " })
@@ -73,11 +70,11 @@ describe("generateVideoFromPrompt", () => {
       code: "VALIDATION_ERROR",
       status: 400,
     });
-    expect(generateVideoDescriptionFromPrompt).not.toHaveBeenCalled();
+    expect(generateSceneJson).not.toHaveBeenCalled();
   });
 
   it("returns the generated scene and render metadata on success", async () => {
-    spyOn(aiModule, "generateVideoDescriptionFromPrompt").mockResolvedValueOnce(
+    spyOn(aiModule, "generateSceneJson").mockResolvedValueOnce(
       sampleVideoDescription
     );
     spyOn(renderVideoModule, "renderVideo").mockResolvedValueOnce(
@@ -103,7 +100,7 @@ describe("generateVideoFromPrompt", () => {
   });
 
   it("passes through configuration errors from the model layer", async () => {
-    spyOn(aiModule, "generateVideoDescriptionFromPrompt").mockRejectedValueOnce(
+    spyOn(aiModule, "generateSceneJson").mockRejectedValueOnce(
       new AppError("CONFIGURATION_ERROR", {
         details: ["Set AI_GATEWAY_API_KEY before calling /api/generate-video."],
         message: "Missing AI_GATEWAY_API_KEY.",
@@ -121,7 +118,7 @@ describe("generateVideoFromPrompt", () => {
   });
 
   it("passes through render failures after generation succeeds", async () => {
-    spyOn(aiModule, "generateVideoDescriptionFromPrompt").mockResolvedValueOnce(
+    spyOn(aiModule, "generateSceneJson").mockResolvedValueOnce(
       sampleVideoDescription
     );
     spyOn(renderVideoModule, "renderVideo").mockRejectedValueOnce(

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { AppError } from "@/lib/errors";
 import type { PromptToVideoSceneResponse } from "@/lib/types/prompt-to-video";
 
-const aiModule = await import("@/lib/ai/generate-video-description");
+const aiModule = await import("@/lib/actions/ai");
 const { POST } = await import("@/app/api/generate-scene/route");
 
 const sampleSceneResponse: PromptToVideoSceneResponse = {
@@ -50,30 +50,20 @@ describe("POST /api/generate-scene", () => {
   });
 
   it("returns the generated scene response", async () => {
-    const generateVideoDescriptionFromPrompt = spyOn(
-      aiModule,
-      "generateVideoDescriptionFromPrompt"
-    );
-    generateVideoDescriptionFromPrompt.mockResolvedValueOnce(
-      sampleSceneResponse.scene
-    );
+    const generateSceneJson = spyOn(aiModule, "generateSceneJson");
+    generateSceneJson.mockResolvedValueOnce(sampleSceneResponse.scene);
 
     const response = await POST(
       createRequest(JSON.stringify({ prompt: "A modern launch trailer" }))
     );
 
     expect(response.status).toBe(200);
-    expect(generateVideoDescriptionFromPrompt).toHaveBeenCalledWith(
-      "A modern launch trailer"
-    );
+    expect(generateSceneJson).toHaveBeenCalledWith("A modern launch trailer");
     await expect(response.json()).resolves.toEqual(sampleSceneResponse);
   });
 
   it("returns a validation error when the request body is invalid JSON", async () => {
-    const generateVideoDescriptionFromPrompt = spyOn(
-      aiModule,
-      "generateVideoDescriptionFromPrompt"
-    );
+    const generateSceneJson = spyOn(aiModule, "generateSceneJson");
     const consoleError = spyOn(console, "error").mockImplementation(
       () => undefined
     );
@@ -81,7 +71,7 @@ describe("POST /api/generate-scene", () => {
     const response = await POST(createRequest("{"));
 
     expect(response.status).toBe(400);
-    expect(generateVideoDescriptionFromPrompt).not.toHaveBeenCalled();
+    expect(generateSceneJson).not.toHaveBeenCalled();
     expect(consoleError).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
       error: {
@@ -93,14 +83,11 @@ describe("POST /api/generate-scene", () => {
   });
 
   it("returns machine-readable failures from the generation flow", async () => {
-    const generateVideoDescriptionFromPrompt = spyOn(
-      aiModule,
-      "generateVideoDescriptionFromPrompt"
-    );
+    const generateSceneJson = spyOn(aiModule, "generateSceneJson");
     const consoleError = spyOn(console, "error").mockImplementation(
       () => undefined
     );
-    generateVideoDescriptionFromPrompt.mockRejectedValueOnce(
+    generateSceneJson.mockRejectedValueOnce(
       new AppError("GENERATION_ERROR", {
         details: ["schema mismatch"],
       })

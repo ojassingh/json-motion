@@ -6,9 +6,7 @@ import type { VideoDescription } from "@/lib/types/video";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 
 const aiSdk = await import("ai");
-const { generateVideoDescriptionFromPrompt } = await import(
-  "@/lib/ai/generate-video-description"
-);
+const { generateSceneJson } = await import("@/lib/actions/ai");
 
 const sampleVideoDescription: VideoDescription = {
   background: "#0b1020",
@@ -36,7 +34,7 @@ const sampleVideoDescription: VideoDescription = {
   width: 960,
 };
 
-describe("generateVideoDescriptionFromPrompt", () => {
+describe("generateSceneJson", () => {
   const originalGatewayKey = process.env.AI_GATEWAY_API_KEY;
 
   afterEach(() => {
@@ -54,9 +52,7 @@ describe("generateVideoDescriptionFromPrompt", () => {
     const generateText = spyOn(aiSdk, "generateText");
     process.env.AI_GATEWAY_API_KEY = "";
 
-    await expect(
-      generateVideoDescriptionFromPrompt("a simple square")
-    ).rejects.toMatchObject({
+    await expect(generateSceneJson("a simple square")).rejects.toMatchObject({
       code: "CONFIGURATION_ERROR",
       details: ["Set AI_GATEWAY_API_KEY before calling /api/generate-video."],
       status: 500,
@@ -72,15 +68,13 @@ describe("generateVideoDescriptionFromPrompt", () => {
     expect(serializedSchema.includes('"prefixItems"')).toBe(false);
   });
 
-  it("documents flat positioning and semantic anchors for prompt generation", () => {
-    expect(
-      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes(
-        'Put "x" and "y" directly on the node'
-      )
-    ).toBe(true);
-    expect(
-      PROMPT_TO_VIDEO_SYSTEM_PROMPT.includes('semantic "anchor" field')
-    ).toBe(true);
+  it("documents layout primitives and anchor values in the generated prompt", () => {
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("center");
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("stack");
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("align");
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("anchor");
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("x");
+    expect(PROMPT_TO_VIDEO_SYSTEM_PROMPT).toContain("y");
   });
 
   it("uses the explicit gateway provider and returns the generated scene", async () => {
@@ -102,9 +96,9 @@ describe("generateVideoDescriptionFromPrompt", () => {
       warnings: [],
     } as unknown as Awaited<ReturnType<typeof aiSdk.generateText>>);
 
-    await expect(
-      generateVideoDescriptionFromPrompt("a simple square")
-    ).resolves.toEqual(sampleVideoDescription);
+    await expect(generateSceneJson("a simple square")).resolves.toEqual(
+      sampleVideoDescription
+    );
 
     expect(gateway).toHaveBeenCalledWith("openai/gpt-5.4");
     expect(generateText).toHaveBeenCalledTimes(1);
@@ -120,9 +114,7 @@ describe("generateVideoDescriptionFromPrompt", () => {
     } as unknown as ReturnType<typeof aiSdk.gateway>);
     generateText.mockRejectedValueOnce(new Error("gateway schema mismatch"));
 
-    await expect(
-      generateVideoDescriptionFromPrompt("a simple square")
-    ).rejects.toMatchObject({
+    await expect(generateSceneJson("a simple square")).rejects.toMatchObject({
       code: "GENERATION_ERROR",
       details: ["gateway schema mismatch"],
       status: 502,
