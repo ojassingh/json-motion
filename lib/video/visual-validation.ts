@@ -1,8 +1,4 @@
-import type {
-  VideoDescription,
-  VideoNode,
-  VideoScene,
-} from "@/lib/types/video";
+import type { VideoDescription, VideoNode } from "@/lib/types/video";
 
 export interface VisualWarning {
   message: string;
@@ -22,91 +18,28 @@ const isDimensionedNode = (node: VideoNode): node is DimensionedNode =>
   node.type === "functionGraph" ||
   node.type === "parametricGraph";
 
-const getAnchorOffsetFactors = (
-  anchor: string
-): { xFactor: number; yFactor: number } => {
-  if (anchor === "top-left") {
-    return { xFactor: 0, yFactor: 0 };
-  }
-  if (anchor === "top-center") {
-    return { xFactor: 0.5, yFactor: 0 };
-  }
-  if (anchor === "top-right") {
-    return { xFactor: 1, yFactor: 0 };
-  }
-  if (anchor === "center-left") {
-    return { xFactor: 0, yFactor: 0.5 };
-  }
-  if (anchor === "center") {
-    return { xFactor: 0.5, yFactor: 0.5 };
-  }
-  if (anchor === "center-right") {
-    return { xFactor: 1, yFactor: 0.5 };
-  }
-  if (anchor === "bottom-left") {
-    return { xFactor: 0, yFactor: 1 };
-  }
-  if (anchor === "bottom-center") {
-    return { xFactor: 0.5, yFactor: 1 };
-  }
-  return { xFactor: 1, yFactor: 1 };
-};
-
 const checkOffScreen = (
+  id: string,
   node: DimensionedNode,
   frameWidth: number,
   frameHeight: number
 ): VisualWarning | null => {
   const x = node.x ?? 0;
   const y = node.y ?? 0;
-  const anchor = node.anchor ?? "center";
-  const { xFactor, yFactor } = getAnchorOffsetFactors(anchor);
+  const w = node.width ?? 0;
+  const h = node.height ?? 0;
+  const right = x + w;
+  const bottom = y + h;
 
-  const left = x - xFactor * node.width;
-  const top = y - yFactor * node.height;
-  const right = left + node.width;
-  const bottom = top + node.height;
-
-  if (right > 0 && bottom > 0 && left < frameWidth && top < frameHeight) {
+  if (right > 0 && bottom > 0 && x < frameWidth && y < frameHeight) {
     return null;
   }
 
   return {
-    message: `Node "${node.id}" is entirely off-screen at initial position (${x}, ${y}).`,
-    nodeId: node.id,
+    message: `Node "${id}" is entirely off-screen at initial position (${x}, ${y}).`,
+    nodeId: id,
     severity: "warn",
   };
-};
-
-const collectNodeWarnings = (
-  node: VideoNode,
-  scene: VideoScene,
-  frameWidth: number,
-  frameHeight: number
-): VisualWarning[] => {
-  const warnings: VisualWarning[] = [];
-
-  if (isDimensionedNode(node)) {
-    const offScreen = checkOffScreen(node, frameWidth, frameHeight);
-    if (offScreen) {
-      warnings.push(offScreen);
-    }
-  }
-
-  if (
-    node.type === "group" ||
-    node.type === "center" ||
-    node.type === "stack" ||
-    node.type === "align"
-  ) {
-    for (const child of node.children) {
-      warnings.push(
-        ...collectNodeWarnings(child, scene, frameWidth, frameHeight)
-      );
-    }
-  }
-
-  return warnings;
 };
 
 export const collectVisualWarnings = (
@@ -116,8 +49,13 @@ export const collectVisualWarnings = (
   const warnings: VisualWarning[] = [];
 
   for (const scene of videoDescription.scenes) {
-    for (const node of scene.nodes) {
-      warnings.push(...collectNodeWarnings(node, scene, width, height));
+    for (const [id, node] of Object.entries(scene.nodes)) {
+      if (isDimensionedNode(node)) {
+        const w = checkOffScreen(id, node, width, height);
+        if (w) {
+          warnings.push(w);
+        }
+      }
     }
   }
 

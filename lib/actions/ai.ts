@@ -1,4 +1,5 @@
 import { gateway, generateText, Output } from "ai";
+
 import {
   buildPromptToVideoUserPrompt,
   PROMPT_TO_VIDEO_MODEL,
@@ -20,18 +21,10 @@ export const convertAiOutputToVideoDescription = (
   let startFrame = 0;
 
   const scenes = aiOutput.scenes.map((scene) => {
-    const duration = Math.round(
-      Number.parseFloat(scene.duration) * DEFAULT_CANVAS_FPS
-    );
-    const convertedScene = {
-      ...scene,
-      duration,
-      startFrame,
-    };
-
+    const duration = Math.round(scene.duration * DEFAULT_CANVAS_FPS);
+    const converted = { ...scene, duration, startFrame };
     startFrame += duration;
-
-    return convertedScene;
+    return converted;
   });
 
   return videoDescriptionSchema.parse({

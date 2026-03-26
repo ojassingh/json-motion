@@ -5,6 +5,7 @@ import { TeX } from "mathjax-full/js/input/tex.js";
 import { mathjax } from "mathjax-full/js/mathjax.js";
 import { SVG } from "mathjax-full/js/output/svg.js";
 import { type Image, loadImage } from "skia-canvas";
+
 import { AppError, toAppError } from "@/lib/errors";
 import type { VideoMathNode, VideoScene } from "@/lib/types/video";
 import { flattenSceneNodes } from "@/lib/video/nodes";
@@ -19,11 +20,6 @@ const mathDoc = mathjax.document("", {
   InputJax: new TeX({ packages: AllPackages }),
   OutputJax: new SVG({ fontCache: "none" }),
 });
-
-const collectMathNodes = (scenes: VideoScene[]): VideoMathNode[] =>
-  flattenSceneNodes(scenes).filter(
-    (node): node is VideoMathNode => node.type === "math"
-  );
 
 const svgToPixelDimensions = (svg: string): string =>
   svg
@@ -58,37 +54,33 @@ export const resolveMathDimensions = (
     "color" | "fontSize" | "height" | "latex" | "width"
   >,
   mathImages?: Map<string, Image>
-): {
-  height: number;
-  width: number;
-} => {
+): { height: number; width: number } => {
   const color = node.color ?? DEFAULT_MATH_COLOR;
   const image = mathImages?.get(buildMathCacheKey(node.latex, color));
 
   if (image && image.height > 0) {
     const scale = node.fontSize / image.height;
-    return {
-      height: node.fontSize,
-      width: image.width * scale,
-    };
+    return { height: node.fontSize, width: image.width * scale };
   }
 
-  return {
-    height: node.height ?? 0,
-    width: node.width ?? 0,
-  };
+  return { height: node.height ?? 0, width: node.width ?? 0 };
 };
 
 export const preRenderMathNodes = async (
   scenes: VideoScene[]
 ): Promise<Map<string, Image>> => {
-  const mathNodes = collectMathNodes(scenes);
+  const all = flattenSceneNodes(scenes);
   const cache = new Map<string, Image>();
-
   const seen = new Set<string>();
-  for (const node of mathNodes) {
+
+  for (const node of all) {
+    if (node.type !== "math") {
+      continue;
+    }
+
     const color = node.color ?? DEFAULT_MATH_COLOR;
     const key = buildMathCacheKey(node.latex, color);
+
     if (seen.has(key)) {
       continue;
     }
