@@ -28,16 +28,18 @@ export function PromptInput() {
               Choose what you&apos;d like to generate
             </p>
             {PROMPT_SUGGESTIONS.map((s) => (
-              <div
-                className="rounded border bg-background p-2 text-muted-foreground text-xs"
+              <button
+                className="rounded border bg-background p-2 text-left text-muted-foreground text-xs transition-colors hover:bg-muted hover:text-foreground"
                 key={s}
+                onClick={() => setPrompt(s)}
+                type="button"
               >
                 {s}
-              </div>
+              </button>
             ))}
           </div>
         ) : (
-          <ul className="flex flex-col p-1.5">
+          <ul className="flex flex-col gap-2 p-1.5">
             {generations.map((g) => (
               <li key={g.id}>
                 <div
@@ -63,20 +65,32 @@ export function PromptInput() {
             disabled={isLoading}
             maxLength={MAX_PROMPT_LENGTH}
             onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !isLoading &&
+                prompt.trim()
+              ) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
             placeholder="Describe the motion..."
             rows={3}
             value={prompt}
           />
           <Button
             aria-label="Generate"
-            className="absolute right-1.5 bottom-1.5 rounded-full"
+            className="absolute right-1.5 bottom-1.5 my-2 rounded-full"
             disabled={isLoading || !prompt.trim()}
+            size="icon"
             type="submit"
           >
             {isLoading ? (
-              <Loader2 className="size-3 animate-spin" />
+              <Loader2 className="size-5 animate-spin" />
             ) : (
-              <ArrowRight className="size-3" />
+              <ArrowRight className="size-5" />
             )}
           </Button>
         </div>
