@@ -5,7 +5,6 @@ import { videoAiOutputSchema } from "@/lib/video/schema";
 export interface NodeEntry {
   description: string;
   propSchema: z.ZodObject<z.ZodRawShape>;
-  slots: string[];
 }
 
 export interface CatalogOptions {
@@ -18,7 +17,6 @@ interface CatalogDefinition {
   anchors: z.ZodEnum<Record<string, string>>;
   easings: z.ZodEnum<Record<string, string>>;
   nodes: Record<string, NodeEntry>;
-  primitives: z.ZodEnum<Record<string, string>>;
 }
 
 export interface Catalog {
@@ -30,68 +28,54 @@ const describeZodType = (schema: z.ZodTypeAny): string => {
   if (schema instanceof z.ZodOptional) {
     return describeZodType(schema.unwrap() as z.ZodTypeAny);
   }
-
   if (schema instanceof z.ZodNullable) {
     return `${describeZodType(schema.unwrap() as z.ZodTypeAny)} | null`;
   }
-
   if (schema instanceof z.ZodLiteral) {
     return typeof schema.value === "string"
       ? `"${schema.value}"`
       : String(schema.value);
   }
-
   if (schema instanceof z.ZodEnum) {
     return (schema.options as string[]).map((v) => `"${v}"`).join(" | ");
   }
-
   if (schema instanceof z.ZodString) {
     return "string";
   }
-
   if (schema instanceof z.ZodNumber) {
     return "number";
   }
-
   if (schema instanceof z.ZodBoolean) {
     return "boolean";
   }
-
   if (schema instanceof z.ZodArray) {
     return `${describeZodType(schema.element as z.ZodTypeAny)}[]`;
   }
-
   if (schema instanceof z.ZodUnion) {
     return (schema.options as z.ZodTypeAny[]).map(describeZodType).join(" | ");
   }
-
   if (schema instanceof z.ZodObject) {
     return "object";
   }
-
   return "unknown";
 };
 
 const isOptionalField = (schema: z.ZodTypeAny): boolean =>
   schema instanceof z.ZodOptional;
 
-// These are universal to all nodes and documented in the shared sections below.
 const SKIPPED_PROPS = new Set([
-  "anchor",
-  "children",
-  "exit",
-  "exitTransition",
-  "id",
-  "initial",
+  "anchorAlign",
+  "anchorEdge",
+  "anchorTo",
+  "gap",
   "opacity",
-  "primitives",
+  "place",
   "rotate",
   "scale",
   "scaleX",
   "scaleY",
   "skewX",
   "skewY",
-  "transition",
   "type",
   "x",
   "y",
@@ -100,12 +84,6 @@ const SKIPPED_PROPS = new Set([
 
 const generateNodeSection = (name: string, entry: NodeEntry): string => {
   const lines: string[] = [`### ${name}`, entry.description, ""];
-
-  if (entry.slots.length > 0) {
-    lines.push(`Accepts children: ${entry.slots.join(", ")}`);
-    lines.push("");
-  }
-
   const shape = entry.propSchema.shape as Record<string, z.ZodTypeAny>;
   const required: string[] = [];
   const optional: string[] = [];
@@ -114,10 +92,7 @@ const generateNodeSection = (name: string, entry: NodeEntry): string => {
     if (SKIPPED_PROPS.has(key)) {
       continue;
     }
-
-    const typeDesc = describeZodType(fieldSchema);
-    const line = `- \`${key}\`: ${typeDesc}`;
-
+    const line = `- \`${key}\`: ${describeZodType(fieldSchema)}`;
     if (isOptionalField(fieldSchema)) {
       optional.push(line);
     } else {
@@ -126,94 +101,13 @@ const generateNodeSection = (name: string, entry: NodeEntry): string => {
   }
 
   if (required.length > 0) {
-    lines.push("Required:");
-    lines.push(...required);
-    lines.push("");
+    lines.push("Required:", ...required, "");
   }
-
   if (optional.length > 0) {
-    lines.push("Optional:");
-    lines.push(...optional);
-    lines.push("");
+    lines.push("Optional:", ...optional, "");
   }
 
   return lines.join("\n");
-};
-
-const LAYOUT_GUIDANCE = `
-## Layout Guidance
-
-Use layout primitives instead of computing pixel coordinates manually:
-
-- \`center\`: place an element at the center of the frame — wraps a single child
-- \`stack\`: arrange a list of elements vertically or horizontally with consistent spacing — use \`gap\` for spacing
-- \`align\`: position an element relative to a named edge or corner (e.g. title at top-center, watermark at bottom-right)
-
-Use raw \`x\`/\`y\` coordinates only when precise pixel placement is explicitly needed.
-Do NOT compute center coordinates as \`width/2\`, \`height/2\` — use \`center\` instead.
-`.trim();
-
-const ANIMATION_GUIDANCE = `
-## Animations
-
-### Primitives (preferred)
-
-Use \`primitives\` for common effects — single words, never fails:
-`.trim();
-
-const generateAnimationSection = (definition: CatalogDefinition): string => {
-  const primitiveList = (definition.primitives.options as string[])
-    .map((v) => `"${v}"`)
-    .join(", ");
-
-  return `${ANIMATION_GUIDANCE}
-${primitiveList}
-
-Use \`"BlurFadeIn"\` as the default enter animation. Use \`"FadeOut"\` for exit at scene end.
-Use \`"DrawIn"\` on \`functionGraph\` or \`parametricGraph\` nodes to animate drawing from left to right.
-Use \`primitives\` whenever possible. Prefer them for almost all animations because they are simpler and more reliable.
-Only use custom animation fields when primitives cannot express the motion cleanly, or when the user explicitly asks for a different animation.
-
-### Custom enter animation
-
-Use \`initial\` + \`transition\` for custom entry. \`initial\` is the node's starting state;
-the node's own props are the resting target. The engine computes all frames.
-
-\`\`\`json
-"initial": { "opacity": 0, "y": 30, "blur": 8 },
-"transition": { "duration": "0.4s", "delay": "0.2s", "easing": "ease-out" }
-\`\`\`
-
-### Custom exit animation
-
-Use \`exit\` + \`exitTransition\`. The exit window is anchored to the end of the scene.
-
-\`\`\`json
-"exit": { "opacity": 0, "y": -20 },
-"exitTransition": { "duration": "0.3s", "easing": "ease-in" }
-\`\`\`
-
-Never combine \`primitives\` with \`initial\`/\`transition\`/\`exit\`/\`exitTransition\` on the same node.
-
-Animatable in initial/exit: \`opacity\`, \`x\`, \`y\`, \`rotate\`, \`scale\`, \`scaleX\`, \`scaleY\`, \`skewX\`, \`skewY\`, \`blur\`
-
-Transition fields: \`duration\` (required, e.g. \`"0.3s"\`), \`delay\` (optional), \`easing\` (optional)
-Easing values: ${(definition.easings.options as string[]).map((v) => `"${v}"`).join(", ")}
-
-### Staggered multi-element entrance
-
-Increment \`transition.delay\` per element — no frame math needed:
-\`\`\`json
-{ "transition": { "delay": "0s",    "duration": "0.3s" } },
-{ "transition": { "delay": "0.15s", "duration": "0.3s" } },
-{ "transition": { "delay": "0.3s",  "duration": "0.3s" } }
-\`\`\`
-
-### Sequential content
-
-Use **multiple scenes** for elements that appear one after another.
-Each scene gets its own nodes with \`"BlurFadeIn"\` / \`"FadeOut"\` primitives.
-Never try to coordinate sequential elements within a single scene using delayed animations.`;
 };
 
 const generatePrompt = (
@@ -221,26 +115,28 @@ const generatePrompt = (
   options: CatalogOptions
 ): string => {
   const { fps, height, width } = options;
+  const easings = (definition.easings.options as string[])
+    .map((v) => `"${v}"`)
+    .join(", ");
+  const anchors = (definition.anchors.options as string[])
+    .map((v) => `"${v}"`)
+    .join(", ");
 
   const sections: string[] = [
     "You generate video scene descriptions for a deterministic canvas renderer.",
     "",
     `Canvas: ${width}×${height} @ ${fps}fps`,
-    'Use one or two scenes. Keep each scene between 1s and 3s. Express duration in seconds (e.g. `"2s"`, `"1.5s"`).',
+    "Use one or two scenes. Keep each scene between 1s and 4s. Express duration as a number in seconds (e.g. 2, 1.5).",
     "",
     "## Output Rules",
     "",
     "- Return only data that matches the provided schema.",
-    "- Use unique IDs for every scene and node.",
+    "- Nodes are a dictionary keyed by unique ID (no `id` field on the node).",
     "- Use hex colors (#rrggbb or #rgb) for all color values.",
     "- Never include commentary, markdown, or extra keys outside the schema.",
-    '- Express scene duration in seconds (e.g. `"2s"`). Never use raw frame numbers.',
     "- Do not use image nodes.",
     "- Omit `background`, `color`, and `fontFamily` unless intentionally overriding defaults.",
     "  Defaults: background = black, text color = #f8fafc, fontFamily = Inter.",
-    "- Use `BlurFadeIn` as the default enter animation unless the user requests something else.",
-    "- Prefer `primitives` whenever possible. Use custom animation fields only when primitives are not enough or the user explicitly asks for a different animation.",
-    "- Use either `primitives` or custom animation fields on a node. Never use both together.",
     "- Keep text concise. Headlines should be one short sentence or less.",
     "- Only include elements the user explicitly requests.",
     "",
@@ -252,19 +148,63 @@ const generatePrompt = (
     sections.push(generateNodeSection(name, entry));
   }
 
-  sections.push("## Shared Properties (all nodes)");
-  sections.push("");
   sections.push(
-    "All nodes support: `id` (string, required), `x` (number), `y` (number), `anchor` (default: center), `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `zIndex`, `primitives`, `initial`, `transition`, `exit`, `exitTransition`"
+    "## Shared Node Properties",
+    "",
+    "All nodes support: `place`, `anchorTo`, `anchorEdge`, `anchorAlign`, `gap`, `x`, `y`, `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `zIndex`",
+    "",
+    "## Layout",
+    "",
+    "Use `place` for absolute canvas positioning. It accepts an anchor value: " +
+      anchors,
+    '`place: "center"` centers the node on the canvas. `place: "top-right"` puts it in the top-right corner.',
+    "",
+    "Use `anchorTo` to position a node relative to another node:",
+    "- `anchorTo`: ID of the parent node",
+    "- `anchorEdge`: which edge of the parent to attach to (`top`, `bottom`, `left`, `right`). Default: `bottom`.",
+    "- `anchorAlign`: cross-axis alignment (`start`, `center`, `end`). Default: `center`.",
+    "- `gap`: spacing from the edge in pixels.",
+    "",
+    "Nodes without `place` or `anchorTo` use explicit `x`/`y` (top-left corner).",
+    "",
+    "### Example: title with subtitle below",
+    "",
+    "```json",
+    '"nodes": {',
+    '  "title": { "type": "text", "text": "Hello", "size": 64, "place": "center" },',
+    '  "subtitle": { "type": "text", "text": "World", "size": 32, "anchorTo": "title", "anchorEdge": "bottom", "gap": 16 }',
+    "}",
+    "```",
+    "",
+    "## Timeline (Animation)",
+    "",
+    "All animation is in a centralized `timeline` array on each scene. Nodes have no keyframes or primitives.",
+    "",
+    "Each timeline event has:",
+    "- `at`: when the event starts (seconds)",
+    "- `target`: node ID or array of IDs",
+    "- `dur`: animation duration in seconds (omit for instant snap)",
+    `- \`ease\`: easing function. Values: ${easings}`,
+    '- `action`: optional macro — `"draw"` animates `drawProgress` from 0 to 1 for graph nodes',
+    "",
+    "Animatable properties: `opacity`, `dx`, `dy`, `x`, `y`, `scale`, `scaleX`, `scaleY`, `rotate`, `skewX`, `skewY`, `fill`, `stroke`, `color`, `width`, `height`, `size`, `cornerRadius`, `strokeWidth`, `drawProgress`",
+    "",
+    "`dx`/`dy` are offsets from the layout-resolved position. Use them for relative motion instead of computing absolute coordinates.",
+    "`x`/`y` in the timeline override the layout position with an absolute canvas position.",
+    "",
+    "### Example: fade in, move up, then draw a graph",
+    "",
+    "```json",
+    '"timeline": [',
+    '  { "at": 0.5, "target": ["title", "subtitle"], "opacity": 1, "dur": 0.5, "ease": "ease-out" },',
+    '  { "at": 1.5, "target": ["title", "subtitle"], "dy": -20, "dur": 0.5 },',
+    '  { "at": 1.8, "action": "draw", "target": "graph", "dur": 1.5, "ease": "linear" },',
+    '  { "at": 3.5, "target": ["title", "subtitle", "graph"], "opacity": 0, "dur": 0.3 }',
+    "]",
+    "```",
+    "",
+    "Pad the timeline: add ~1 second before the first animation and ~1 second hold after the last."
   );
-  sections.push("");
-  sections.push(
-    `Anchor values: ${(definition.anchors.options as string[]).map((v) => `"${v}"`).join(", ")}`
-  );
-  sections.push("");
-  sections.push(generateAnimationSection(definition));
-  sections.push("");
-  sections.push(LAYOUT_GUIDANCE);
 
   return sections.join("\n");
 };

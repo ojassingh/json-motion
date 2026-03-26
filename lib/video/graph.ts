@@ -13,23 +13,6 @@ export interface Point2D {
   y: number;
 }
 
-const collectGraphNodes = (
-  scenes: VideoScene[]
-): {
-  functionGraphNodes: VideoFunctionGraphNode[];
-  parametricGraphNodes: VideoParametricGraphNode[];
-} => {
-  const all = flattenSceneNodes(scenes);
-  return {
-    functionGraphNodes: all.filter(
-      (n): n is VideoFunctionGraphNode => n.type === "functionGraph"
-    ),
-    parametricGraphNodes: all.filter(
-      (n): n is VideoParametricGraphNode => n.type === "parametricGraph"
-    ),
-  };
-};
-
 const sampleFunctionGraph = (node: VideoFunctionGraphNode): Point2D[] => {
   const expr = compile(node.fn);
   const xMin = node.xRange[0] ?? 0;
@@ -103,27 +86,28 @@ const sampleParametricGraph = (node: VideoParametricGraphNode): Point2D[] => {
 export const preSampleGraphNodes = (
   scenes: VideoScene[]
 ): Map<string, Point2D[]> => {
-  const { functionGraphNodes, parametricGraphNodes } =
-    collectGraphNodes(scenes);
+  const all = flattenSceneNodes(scenes);
   const cache = new Map<string, Point2D[]>();
 
-  for (const node of functionGraphNodes) {
-    try {
-      cache.set(node.id, sampleFunctionGraph(node));
-    } catch (error) {
-      throw toAppError(error, "PRERENDER_ERROR", {
-        message: `Failed to sample function graph "${node.fn}"`,
-      });
+  for (const node of all) {
+    if (node.type === "functionGraph") {
+      try {
+        cache.set(node.id, sampleFunctionGraph(node));
+      } catch (error) {
+        throw toAppError(error, "PRERENDER_ERROR", {
+          message: `Failed to sample function graph "${node.fn}"`,
+        });
+      }
     }
-  }
 
-  for (const node of parametricGraphNodes) {
-    try {
-      cache.set(node.id, sampleParametricGraph(node));
-    } catch (error) {
-      throw toAppError(error, "PRERENDER_ERROR", {
-        message: `Failed to sample parametric graph fnX="${node.fnX}" fnY="${node.fnY}"`,
-      });
+    if (node.type === "parametricGraph") {
+      try {
+        cache.set(node.id, sampleParametricGraph(node));
+      } catch (error) {
+        throw toAppError(error, "PRERENDER_ERROR", {
+          message: `Failed to sample parametric graph fnX="${node.fnX}" fnY="${node.fnY}"`,
+        });
+      }
     }
   }
 

@@ -1,46 +1,39 @@
 import type { z } from "zod";
 
 import type {
-  videoAiNodeSchema,
   videoAiOutputSchema,
   videoAiSceneSchema,
+  videoAnchorAlignSchema,
+  videoAnchorEdgeSchema,
   videoAnchorSchema,
   videoDescriptionSchema,
   videoEasingSchema,
   videoHexColorSchema,
   videoImageFitSchema,
   videoNodeSchema,
-  videoNodeStateSchema,
-  videoNodeTransitionSchema,
-  videoPrimitiveSchema,
   videoSceneSchema,
-  videoStackAlignSchema,
   videoTextAlignSchema,
+  videoTimelineEventSchema,
 } from "@/lib/video/schema";
 
-export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
-export type VideoAiNode = z.infer<typeof videoAiNodeSchema>;
 export type VideoAiOutput = z.infer<typeof videoAiOutputSchema>;
 export type VideoAiScene = z.infer<typeof videoAiSceneSchema>;
+export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
+export type VideoAnchorAlign = z.infer<typeof videoAnchorAlignSchema>;
+export type VideoAnchorEdge = z.infer<typeof videoAnchorEdgeSchema>;
 export type VideoColor = z.infer<typeof videoHexColorSchema>;
 export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;
 export type VideoImageFit = z.infer<typeof videoImageFitSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
-export type VideoNodeState = z.infer<typeof videoNodeStateSchema>;
-export type VideoNodeTransition = z.infer<typeof videoNodeTransitionSchema>;
-export type VideoPrimitive = z.infer<typeof videoPrimitiveSchema>;
 export type VideoScene = z.infer<typeof videoSceneSchema>;
-export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;
 export type VideoTextAlign = z.infer<typeof videoTextAlignSchema>;
+export type VideoTimelineEvent = z.infer<typeof videoTimelineEventSchema>;
 
-export type VideoAlignNode = Extract<VideoNode, { type: "align" }>;
-export type VideoCenterNode = Extract<VideoNode, { type: "center" }>;
 export type VideoFunctionGraphNode = Extract<
   VideoNode,
   { type: "functionGraph" }
 >;
-export type VideoGroupNode = Extract<VideoNode, { type: "group" }>;
 export type VideoImageNode = Extract<VideoNode, { type: "image" }>;
 export type VideoMathNode = Extract<VideoNode, { type: "math" }>;
 export type VideoParametricGraphNode = Extract<
@@ -48,11 +41,13 @@ export type VideoParametricGraphNode = Extract<
   { type: "parametricGraph" }
 >;
 export type VideoRectNode = Extract<VideoNode, { type: "rect" }>;
-export type VideoStackNode = Extract<VideoNode, { type: "stack" }>;
 export type VideoTextNode = Extract<VideoNode, { type: "text" }>;
 
+// ---------------------------------------------------------------------------
+// Resolved types — fully concrete values for a single frame
+// ---------------------------------------------------------------------------
+
 export interface ResolvedNodeBase {
-  anchor: VideoAnchor;
   blur: number;
   id: string;
   opacity: number;
@@ -65,11 +60,6 @@ export interface ResolvedNodeBase {
   x: number;
   y: number;
   zIndex: number;
-}
-
-export interface ResolvedGroupNode extends ResolvedNodeBase {
-  children: ResolvedVideoNode[];
-  type: "group";
 }
 
 export interface ResolvedRectNode extends ResolvedNodeBase {
@@ -133,31 +123,12 @@ export interface ResolvedParametricGraphNode extends ResolvedNodeBase {
   width: number;
 }
 
-export interface ResolvedAlignNode extends ResolvedNodeBase {
-  children: ResolvedVideoNode[];
-  type: "align";
-}
-
-export interface ResolvedCenterNode extends ResolvedNodeBase {
-  children: ResolvedVideoNode[];
-  type: "center";
-}
-
-export interface ResolvedStackNode extends ResolvedNodeBase {
-  children: ResolvedVideoNode[];
-  type: "stack";
-}
-
 export type ResolvedVideoNode =
-  | ResolvedAlignNode
-  | ResolvedCenterNode
   | ResolvedFunctionGraphNode
-  | ResolvedGroupNode
   | ResolvedImageNode
   | ResolvedMathNode
   | ResolvedParametricGraphNode
   | ResolvedRectNode
-  | ResolvedStackNode
   | ResolvedTextNode;
 
 export interface ResolvedFrame {

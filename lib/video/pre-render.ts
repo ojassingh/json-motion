@@ -16,7 +16,7 @@ const preloadImageAssets = async (
   videoDescription: VideoDescription
 ): Promise<void> => {
   const imageNodes = flattenSceneNodes(videoDescription.scenes).filter(
-    (node): node is VideoImageNode => node.type === "image"
+    (node): node is VideoImageNode & { id: string } => node.type === "image"
   );
 
   await Promise.all(imageNodes.map((node) => loadVideoImage(node.src)));

@@ -16,7 +16,7 @@ export default function Page() {
           >
             <Hero />
             <PromptForm />
-            <PreviewPanel page="home" />
+            <PreviewPanel />
           </section>
         </main>
       </HomeProvider>

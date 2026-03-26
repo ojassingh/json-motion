@@ -1,46 +1,87 @@
-import type {
-  VideoDescription,
-  VideoNode,
-  VideoScene,
-} from "@/lib/types/video";
+import type { VideoDescription, VideoScene } from "@/lib/types/video";
 
 export interface VideoValidationIssue {
   message: string;
   path: Array<number | string>;
 }
 
-const collectNodeValidationIssues = (
-  node: VideoNode,
+const validateSceneAnchors = (
   scene: VideoScene,
-  path: Array<number | string>,
-  seenIds: Set<string>
+  basePath: Array<number | string>
 ): VideoValidationIssue[] => {
   const issues: VideoValidationIssue[] = [];
+  const nodeIds = new Set(Object.keys(scene.nodes));
 
-  if (seenIds.has(node.id)) {
-    issues.push({
-      message: `Duplicate node id "${node.id}" found within scene "${scene.id}".`,
-      path: [...path, "id"],
-    });
-  } else {
-    seenIds.add(node.id);
+  const inDegree = new Map<string, number>();
+  const dependents = new Map<string, string[]>();
+
+  for (const id of nodeIds) {
+    inDegree.set(id, 0);
   }
 
-  if (
-    node.type === "group" ||
-    node.type === "center" ||
-    node.type === "stack" ||
-    node.type === "align"
-  ) {
-    for (const [childIndex, childNode] of node.children.entries()) {
-      issues.push(
-        ...collectNodeValidationIssues(
-          childNode,
-          scene,
-          [...path, "children", childIndex],
-          seenIds
-        )
-      );
+  for (const [id, node] of Object.entries(scene.nodes)) {
+    if (!node.anchorTo) {
+      continue;
+    }
+
+    if (!nodeIds.has(node.anchorTo)) {
+      issues.push({
+        message: `Node "${id}" references non-existent anchorTo target "${node.anchorTo}".`,
+        path: [...basePath, "nodes", id, "anchorTo"],
+      });
+      continue;
+    }
+
+    inDegree.set(id, (inDegree.get(id) ?? 0) + 1);
+    const deps = dependents.get(node.anchorTo) ?? [];
+    deps.push(id);
+    dependents.set(node.anchorTo, deps);
+  }
+
+  const queue = [...nodeIds].filter((id) => (inDegree.get(id) ?? 0) === 0);
+  let visited = 0;
+
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (!id) {
+      break;
+    }
+    visited++;
+    for (const dep of dependents.get(id) ?? []) {
+      const next = (inDegree.get(dep) ?? 1) - 1;
+      inDegree.set(dep, next);
+      if (next === 0) {
+        queue.push(dep);
+      }
+    }
+  }
+
+  if (visited < nodeIds.size) {
+    issues.push({
+      message: "Circular anchorTo dependency detected.",
+      path: [...basePath, "nodes"],
+    });
+  }
+
+  return issues;
+};
+
+const validateTimelineTargets = (
+  scene: VideoScene,
+  basePath: Array<number | string>
+): VideoValidationIssue[] => {
+  const issues: VideoValidationIssue[] = [];
+  const nodeIds = new Set(Object.keys(scene.nodes));
+
+  for (const [i, event] of (scene.timeline ?? []).entries()) {
+    const targets = Array.isArray(event.target) ? event.target : [event.target];
+    for (const t of targets) {
+      if (!nodeIds.has(t)) {
+        issues.push({
+          message: `Timeline event references non-existent target "${t}".`,
+          path: [...basePath, "timeline", i, "target"],
+        });
+      }
     }
   }
 
@@ -53,29 +94,19 @@ export const collectVideoValidationIssues = (
   const issues: VideoValidationIssue[] = [];
   let previousSceneEnd = -1;
 
-  for (const [sceneIndex, scene] of videoDescription.scenes.entries()) {
+  for (const [i, scene] of videoDescription.scenes.entries()) {
     if (scene.startFrame <= previousSceneEnd) {
       issues.push({
         message:
           "Scenes must be ordered by ascending, non-overlapping frame ranges.",
-        path: ["scenes", sceneIndex, "startFrame"],
+        path: ["scenes", i, "startFrame"],
       });
     }
 
     previousSceneEnd = scene.startFrame + scene.duration - 1;
-
-    const seenIds = new Set<string>();
-
-    for (const [nodeIndex, node] of scene.nodes.entries()) {
-      issues.push(
-        ...collectNodeValidationIssues(
-          node,
-          scene,
-          ["scenes", sceneIndex, "nodes", nodeIndex],
-          seenIds
-        )
-      );
-    }
+    const basePath = ["scenes", i];
+    issues.push(...validateSceneAnchors(scene, basePath));
+    issues.push(...validateTimelineTargets(scene, basePath));
   }
 
   return issues;

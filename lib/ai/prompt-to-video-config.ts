@@ -5,18 +5,13 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import {
-  videoAiAlignNodeSchema,
-  videoAiCenterNodeSchema,
-  videoAiFunctionGraphNodeSchema,
-  videoAiGroupNodeSchema,
-  videoAiMathNodeSchema,
-  videoAiParametricGraphNodeSchema,
-  videoAiRectNodeSchema,
-  videoAiStackNodeSchema,
-  videoAiTextNodeSchema,
   videoAnchorSchema,
   videoEasingSchema,
-  videoPrimitiveSchema,
+  videoFunctionGraphNodeSchema,
+  videoMathNodeSchema,
+  videoParametricGraphNodeSchema,
+  videoRectNodeSchema,
+  videoTextNodeSchema,
 } from "@/lib/video/schema";
 
 const DEFAULT_VIDEO_DIMENSIONS = {
@@ -34,61 +29,31 @@ export const videoCatalog = defineCatalog({
   anchors: videoAnchorSchema,
   easings: videoEasingSchema,
   nodes: {
-    align: {
-      description:
-        "Positions its single child relative to a named edge or corner of the frame. Use for titles, watermarks, or any element that should stay anchored to a frame edge.",
-      propSchema: videoAiAlignNodeSchema,
-      slots: ["children"],
-    },
-    center: {
-      description:
-        "Centers its single child within the frame. Use whenever an element should appear in the middle of the screen.",
-      propSchema: videoAiCenterNodeSchema,
-      slots: ["children"],
-    },
     functionGraph: {
       description:
-        "Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use the DrawIn primitive to animate the graph drawing progressively.",
-      propSchema: videoAiFunctionGraphNodeSchema,
-      slots: [],
-    },
-    group: {
-      description:
-        "Container that groups child nodes under a shared transform. Use for animating multiple elements together.",
-      propSchema: videoAiGroupNodeSchema,
-      slots: ["children"],
+        'Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use `action: "draw"` in the timeline to animate it drawing progressively.',
+      propSchema: videoFunctionGraphNodeSchema,
     },
     math: {
       description: "Renders a LaTeX equation. Use for mathematical notation.",
-      propSchema: videoAiMathNodeSchema,
-      slots: [],
+      propSchema: videoMathNodeSchema,
     },
     parametricGraph: {
       description:
-        "Renders a parametric curve where x and y are both functions of t. Expressions use mathjs syntax in t. Use the DrawIn primitive to animate the graph drawing progressively.",
-      propSchema: videoAiParametricGraphNodeSchema,
-      slots: [],
+        'Renders a parametric curve where x and y are functions of t. Expressions use mathjs syntax. Use `action: "draw"` in the timeline to animate.',
+      propSchema: videoParametricGraphNodeSchema,
     },
     rect: {
       description:
-        "Rectangle shape with optional fill color, stroke, and corner radius. The most common building block for motion graphics.",
-      propSchema: videoAiRectNodeSchema,
-      slots: [],
-    },
-    stack: {
-      description:
-        "Arranges multiple child nodes in a vertical or horizontal sequence with automatic spacing. Use for lists, bar charts, or any repeating sequence of elements.",
-      propSchema: videoAiStackNodeSchema,
-      slots: ["children"],
+        "Rectangle shape with optional fill, stroke, and corner radius.",
+      propSchema: videoRectNodeSchema,
     },
     text: {
       description:
-        "Renders a text string. Supports multiline text with \\n. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
-      propSchema: videoAiTextNodeSchema,
-      slots: [],
+        "Renders a text string. Supports multiline with \\n. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
+      propSchema: videoTextNodeSchema,
     },
   },
-  primitives: videoPrimitiveSchema,
 });
 
 export const PROMPT_TO_VIDEO_SYSTEM_PROMPT = videoCatalog.toPrompt(
@@ -100,6 +65,10 @@ export const buildPromptToVideoUserPrompt = (prompt: string): string =>
 Create a polished but simple motion graphic from this request:
 "${prompt}"
 
-Bias toward layouts that work well with rectangles, text, and basic motion only.
+Pad the timeline: add roughly 1 second of delay before the first animation starts and 1 second of hold after the last animation ends. Space out transitions so they don't all fire immediately one after another — give each beat room to breathe.
+Use \`place: "center"\` for content that should appear visually centered.
+Use \`anchorTo\` to stack elements relative to each other instead of computing coordinates.
+Use \`dx\`/\`dy\` in the timeline for relative motion — avoid absolute coordinate math.
+Keep all elements fully inside the canvas.
 If the request implies unsupported media, reinterpret it as a stylized text-and-shape scene.
 `.trim();

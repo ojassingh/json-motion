@@ -1,16 +1,12 @@
 import { Canvas, type CanvasRenderingContext2D, type Image } from "skia-canvas";
+
 import { toAppError } from "@/lib/errors";
 import type {
-  ResolvedAlignNode,
-  ResolvedCenterNode,
-  ResolvedFrame,
   ResolvedFunctionGraphNode,
-  ResolvedGroupNode,
   ResolvedImageNode,
   ResolvedMathNode,
   ResolvedParametricGraphNode,
   ResolvedRectNode,
-  ResolvedStackNode,
   ResolvedTextNode,
   ResolvedVideoNode,
   VideoDescription,
@@ -26,10 +22,7 @@ const degreesToRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 const getNodeDimensions = (
   node: ResolvedVideoNode,
   context: CanvasRenderingContext2D
-): {
-  height: number;
-  width: number;
-} => {
+): { height: number; width: number } => {
   if (
     node.type === "rect" ||
     node.type === "image" ||
@@ -37,10 +30,7 @@ const getNodeDimensions = (
     node.type === "functionGraph" ||
     node.type === "parametricGraph"
   ) {
-    return {
-      height: node.height,
-      width: node.width,
-    };
+    return { height: node.height, width: node.width };
   }
 
   if (node.type === "text") {
@@ -57,63 +47,18 @@ const getNodeDimensions = (
     };
   }
 
-  return {
-    height: 0,
-    width: 0,
-  };
-};
-
-const getAnchorOffset = (
-  node: ResolvedVideoNode,
-  context: CanvasRenderingContext2D
-): {
-  x: number;
-  y: number;
-} => {
-  const { height, width } = getNodeDimensions(node, context);
-
-  if (node.anchor === "top-left") {
-    return { x: 0, y: 0 };
-  }
-
-  if (node.anchor === "top-center") {
-    return { x: width / 2, y: 0 };
-  }
-
-  if (node.anchor === "top-right") {
-    return { x: width, y: 0 };
-  }
-
-  if (node.anchor === "center-left") {
-    return { x: 0, y: height / 2 };
-  }
-
-  if (node.anchor === "center") {
-    return { x: width / 2, y: height / 2 };
-  }
-
-  if (node.anchor === "center-right") {
-    return { x: width, y: height / 2 };
-  }
-
-  if (node.anchor === "bottom-left") {
-    return { x: 0, y: height };
-  }
-
-  if (node.anchor === "bottom-center") {
-    return { x: width / 2, y: height };
-  }
-
-  return { x: width, y: height };
+  return { height: 0, width: 0 };
 };
 
 const applyNodeTransform = (
   context: CanvasRenderingContext2D,
   node: ResolvedVideoNode
 ): void => {
-  const anchorOffset = getAnchorOffset(node, context);
+  const { height, width } = getNodeDimensions(node, context);
+  const cx = width / 2;
+  const cy = height / 2;
 
-  context.translate(node.x + anchorOffset.x, node.y + anchorOffset.y);
+  context.translate(node.x + cx, node.y + cy);
   context.rotate(degreesToRadians(node.rotation));
   context.scale(node.scaleX, node.scaleY);
   context.transform(
@@ -124,12 +69,17 @@ const applyNodeTransform = (
     0,
     0
   );
-  context.translate(-anchorOffset.x, -anchorOffset.y);
+  context.translate(-cx, -cy);
   context.globalAlpha *= node.opacity;
+
   if (node.blur > 0) {
     context.filter = `blur(${node.blur}px)`;
   }
 };
+
+// ---------------------------------------------------------------------------
+// Node-type drawing
+// ---------------------------------------------------------------------------
 
 const drawRoundedRect = (
   context: CanvasRenderingContext2D,
@@ -160,7 +110,6 @@ const drawTextNode = (
   context.textBaseline = "top";
 
   let drawX = 0;
-
   if (node.textAlign === "center") {
     drawX = (node.maxWidth ?? 0) / 2;
   } else if (node.textAlign === "right") {
@@ -176,55 +125,45 @@ const getImageDestinationRect = (
   image: Image,
   node: ResolvedImageNode
 ): {
-  destinationHeight: number;
-  destinationWidth: number;
-  destinationX: number;
-  destinationY: number;
-  sourceHeight?: number;
-  sourceWidth?: number;
-  sourceX?: number;
-  sourceY?: number;
+  dh: number;
+  dw: number;
+  dx: number;
+  dy: number;
+  sh?: number;
+  sw?: number;
+  sx?: number;
+  sy?: number;
 } => {
   if (node.fit === "fill") {
-    return {
-      destinationHeight: node.height,
-      destinationWidth: node.width,
-      destinationX: 0,
-      destinationY: 0,
-    };
+    return { dh: node.height, dw: node.width, dx: 0, dy: 0 };
   }
 
-  const widthRatio = node.width / image.width;
-  const heightRatio = node.height / image.height;
-  const scale =
-    node.fit === "contain"
-      ? Math.min(widthRatio, heightRatio)
-      : Math.max(widthRatio, heightRatio);
+  const wr = node.width / image.width;
+  const hr = node.height / image.height;
+  const scale = node.fit === "contain" ? Math.min(wr, hr) : Math.max(wr, hr);
 
   if (node.fit === "contain") {
-    const destinationWidth = image.width * scale;
-    const destinationHeight = image.height * scale;
-
+    const dw = image.width * scale;
+    const dh = image.height * scale;
     return {
-      destinationHeight,
-      destinationWidth,
-      destinationX: (node.width - destinationWidth) / 2,
-      destinationY: (node.height - destinationHeight) / 2,
+      dh,
+      dw,
+      dx: (node.width - dw) / 2,
+      dy: (node.height - dh) / 2,
     };
   }
 
-  const sourceWidth = node.width / scale;
-  const sourceHeight = node.height / scale;
-
+  const sw = node.width / scale;
+  const sh = node.height / scale;
   return {
-    destinationHeight: node.height,
-    destinationWidth: node.width,
-    destinationX: 0,
-    destinationY: 0,
-    sourceHeight,
-    sourceWidth,
-    sourceX: (image.width - sourceWidth) / 2,
-    sourceY: (image.height - sourceHeight) / 2,
+    dh: node.height,
+    dw: node.width,
+    dx: 0,
+    dy: 0,
+    sh,
+    sw,
+    sx: (image.width - sw) / 2,
+    sy: (image.height - sh) / 2,
   };
 };
 
@@ -233,31 +172,24 @@ const drawImageNode = async (
   node: ResolvedImageNode
 ): Promise<void> => {
   const image = await loadVideoImage(node.src);
-  const rect = getImageDestinationRect(image, node);
+  const r = getImageDestinationRect(image, node);
 
   if (node.fit === "cover") {
     context.drawImage(
       image,
-      rect.sourceX ?? 0,
-      rect.sourceY ?? 0,
-      rect.sourceWidth ?? image.width,
-      rect.sourceHeight ?? image.height,
-      rect.destinationX,
-      rect.destinationY,
-      rect.destinationWidth,
-      rect.destinationHeight
+      r.sx ?? 0,
+      r.sy ?? 0,
+      r.sw ?? image.width,
+      r.sh ?? image.height,
+      r.dx,
+      r.dy,
+      r.dw,
+      r.dh
     );
-
     return;
   }
 
-  context.drawImage(
-    image,
-    rect.destinationX,
-    rect.destinationY,
-    rect.destinationWidth,
-    rect.destinationHeight
-  );
+  context.drawImage(image, r.dx, r.dy, r.dw, r.dh);
 };
 
 const drawMathNode = (
@@ -300,59 +232,7 @@ const strokePath = (
   context.stroke();
 };
 
-const drawFunctionGraphAxes = (
-  context: CanvasRenderingContext2D,
-  node: ResolvedFunctionGraphNode
-): void => {
-  const xMin = node.xRange[0] ?? 0;
-  const xMax = node.xRange[1] ?? 1;
-  const yMin = node.yRange[0] ?? 0;
-  const yMax = node.yRange[1] ?? 1;
-  const axisColor = "#ffffff33";
-
-  context.strokeStyle = axisColor;
-  context.lineWidth = 1;
-
-  if (xMin <= 0 && xMax >= 0) {
-    const axisX = ((0 - xMin) / (xMax - xMin)) * node.width;
-    context.beginPath();
-    context.moveTo(axisX, 0);
-    context.lineTo(axisX, node.height);
-    context.stroke();
-  }
-
-  if (yMin <= 0 && yMax >= 0) {
-    const axisY = (1 - (0 - yMin) / (yMax - yMin)) * node.height;
-    context.beginPath();
-    context.moveTo(0, axisY);
-    context.lineTo(node.width, axisY);
-    context.stroke();
-  }
-};
-
 const GRID_LINES = 5;
-
-const drawFunctionGraphGrid = (
-  context: CanvasRenderingContext2D,
-  node: ResolvedFunctionGraphNode
-): void => {
-  context.strokeStyle = "#ffffff1a";
-  context.lineWidth = 1;
-
-  for (let i = 1; i < GRID_LINES; i++) {
-    const x = (i / GRID_LINES) * node.width;
-    context.beginPath();
-    context.moveTo(x, 0);
-    context.lineTo(x, node.height);
-    context.stroke();
-
-    const y = (i / GRID_LINES) * node.height;
-    context.beginPath();
-    context.moveTo(0, y);
-    context.lineTo(node.width, y);
-    context.stroke();
-  }
-};
 
 const drawFunctionGraphNode = (
   context: CanvasRenderingContext2D,
@@ -360,17 +240,49 @@ const drawFunctionGraphNode = (
   graphPoints: Map<string, Point2D[]>
 ): void => {
   const points = graphPoints.get(node.id);
-
   if (!points || points.length === 0) {
     return;
   }
 
   if (node.showGrid) {
-    drawFunctionGraphGrid(context, node);
+    context.strokeStyle = "#ffffff1a";
+    context.lineWidth = 1;
+    for (let i = 1; i < GRID_LINES; i++) {
+      const x = (i / GRID_LINES) * node.width;
+      const y = (i / GRID_LINES) * node.height;
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, node.height);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(node.width, y);
+      context.stroke();
+    }
   }
 
   if (node.showAxes) {
-    drawFunctionGraphAxes(context, node);
+    const xMin = node.xRange[0] ?? 0;
+    const xMax = node.xRange[1] ?? 1;
+    const yMin = node.yRange[0] ?? 0;
+    const yMax = node.yRange[1] ?? 1;
+    context.strokeStyle = "#ffffff33";
+    context.lineWidth = 1;
+
+    if (xMin <= 0 && xMax >= 0) {
+      const ax = ((0 - xMin) / (xMax - xMin)) * node.width;
+      context.beginPath();
+      context.moveTo(ax, 0);
+      context.lineTo(ax, node.height);
+      context.stroke();
+    }
+    if (yMin <= 0 && yMax >= 0) {
+      const ay = (1 - (0 - yMin) / (yMax - yMin)) * node.height;
+      context.beginPath();
+      context.moveTo(0, ay);
+      context.lineTo(node.width, ay);
+      context.stroke();
+    }
   }
 
   const visibleCount = Math.floor(points.length * node.drawProgress);
@@ -388,7 +300,6 @@ const drawParametricGraphNode = (
   graphPoints: Map<string, Point2D[]>
 ): void => {
   const points = graphPoints.get(node.id);
-
   if (!points || points.length === 0) {
     return;
   }
@@ -402,29 +313,9 @@ const drawParametricGraphNode = (
   );
 };
 
-type ResolvedContainerNode =
-  | ResolvedAlignNode
-  | ResolvedCenterNode
-  | ResolvedGroupNode
-  | ResolvedStackNode;
-
-const isContainerNode = (
-  node: ResolvedVideoNode
-): node is ResolvedContainerNode =>
-  node.type === "group" ||
-  node.type === "center" ||
-  node.type === "stack" ||
-  node.type === "align";
-
-const drawContainerNode = async (
-  context: CanvasRenderingContext2D,
-  node: ResolvedContainerNode,
-  caches: PreRenderCaches
-): Promise<void> => {
-  for (const childNode of node.children) {
-    await drawResolvedNode(context, childNode, caches);
-  }
-};
+// ---------------------------------------------------------------------------
+// Main draw dispatch
+// ---------------------------------------------------------------------------
 
 const drawResolvedNode = async (
   context: CanvasRenderingContext2D,
@@ -435,65 +326,27 @@ const drawResolvedNode = async (
   applyNodeTransform(context, node);
 
   try {
-    if (isContainerNode(node)) {
-      await drawContainerNode(context, node, caches);
-      return;
-    }
-
     if (node.type === "rect") {
       drawRoundedRect(context, node);
-      return;
-    }
-
-    if (node.type === "text") {
+    } else if (node.type === "text") {
       drawTextNode(context, node);
-      return;
-    }
-
-    if (node.type === "math") {
+    } else if (node.type === "math") {
       drawMathNode(context, node, caches.mathImages);
-      return;
-    }
-
-    if (node.type === "functionGraph") {
+    } else if (node.type === "functionGraph") {
       drawFunctionGraphNode(context, node, caches.graphPoints);
-      return;
-    }
-
-    if (node.type === "parametricGraph") {
+    } else if (node.type === "parametricGraph") {
       drawParametricGraphNode(context, node, caches.graphPoints);
-      return;
+    } else {
+      await drawImageNode(context, node);
     }
-
-    await drawImageNode(context, node);
   } finally {
     context.restore();
   }
 };
 
-const createCanvas = (
-  videoDescription: VideoDescription
-): {
-  canvas: Canvas;
-  context: CanvasRenderingContext2D;
-} => {
-  const canvas = new Canvas(videoDescription.width, videoDescription.height);
-  canvas.gpu = true;
-  return {
-    canvas,
-    context: canvas.getContext("2d"),
-  };
-};
-
-const paintFrameBackground = (
-  context: CanvasRenderingContext2D,
-  frame: ResolvedFrame,
-  videoDescription: VideoDescription
-): void => {
-  context.clearRect(0, 0, videoDescription.width, videoDescription.height);
-  context.fillStyle = frame.background;
-  context.fillRect(0, 0, videoDescription.width, videoDescription.height);
-};
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export const renderFrameToRgba = async (
   videoDescription: VideoDescription,
@@ -502,9 +355,13 @@ export const renderFrameToRgba = async (
 ): Promise<Buffer> => {
   try {
     const frame = resolveFrame(videoDescription, absoluteFrame, caches);
-    const { canvas, context } = createCanvas(videoDescription);
+    const canvas = new Canvas(videoDescription.width, videoDescription.height);
+    canvas.gpu = true;
+    const context = canvas.getContext("2d");
 
-    paintFrameBackground(context, frame, videoDescription);
+    context.clearRect(0, 0, videoDescription.width, videoDescription.height);
+    context.fillStyle = frame.background;
+    context.fillRect(0, 0, videoDescription.width, videoDescription.height);
 
     for (const node of frame.nodes) {
       await drawResolvedNode(context, node, caches);
