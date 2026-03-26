@@ -1,6 +1,7 @@
 # Motion
-
 Motion is a deterministic, agent-native video engine built on Next.js. A render request describes scenes, nodes, transforms, and animations as plain data. The server resolves each frame with a pure animation layer, rasterizes it through `skia-canvas`, and streams raw RGBA frames into `ffmpeg` to produce an MP4.
+
+<img width="1200" height="630" alt="json-motion" src="https://github.com/user-attachments/assets/35f311b6-9348-4457-9a9f-d075eb3a1808" />
 
 ## Prerequisites
 
