@@ -6,6 +6,7 @@ import type {
   VideoParametricGraphNode,
   VideoScene,
 } from "@/lib/types/video";
+import { flattenSceneNodes } from "@/lib/video/nodes";
 
 export interface Point2D {
   x: number;
@@ -18,27 +19,15 @@ const collectGraphNodes = (
   functionGraphNodes: VideoFunctionGraphNode[];
   parametricGraphNodes: VideoParametricGraphNode[];
 } => {
-  const functionGraphNodes: VideoFunctionGraphNode[] = [];
-  const parametricGraphNodes: VideoParametricGraphNode[] = [];
-
-  for (const scene of scenes) {
-    const stack = [...scene.nodes];
-    while (stack.length > 0) {
-      const node = stack.pop();
-      if (!node) {
-        continue;
-      }
-      if (node.type === "functionGraph") {
-        functionGraphNodes.push(node);
-      } else if (node.type === "parametricGraph") {
-        parametricGraphNodes.push(node);
-      } else if (node.type === "group") {
-        stack.push(...node.children);
-      }
-    }
-  }
-
-  return { functionGraphNodes, parametricGraphNodes };
+  const all = flattenSceneNodes(scenes);
+  return {
+    functionGraphNodes: all.filter(
+      (n): n is VideoFunctionGraphNode => n.type === "functionGraph"
+    ),
+    parametricGraphNodes: all.filter(
+      (n): n is VideoParametricGraphNode => n.type === "parametricGraph"
+    ),
+  };
 };
 
 const sampleFunctionGraph = (node: VideoFunctionGraphNode): Point2D[] => {

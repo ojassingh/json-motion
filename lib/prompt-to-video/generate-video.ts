@@ -1,4 +1,4 @@
-import { generateVideoDescriptionFromPrompt } from "@/lib/ai/generate-video-description";
+import { generateSceneJson } from "@/lib/actions/ai";
 import { createValidationError } from "@/lib/errors";
 import type {
   PromptToVideoRequest,
@@ -36,9 +36,7 @@ export const generateVideoFromPrompt = async (
     );
   }
 
-  const scene = await generateVideoDescriptionFromPrompt(
-    parsedRequest.data.prompt
-  );
+  const scene = await generateSceneJson(parsedRequest.data.prompt);
   const renderResult = await renderVideo(scene);
 
   return toPromptToVideoSuccessResponse(scene, renderResult);

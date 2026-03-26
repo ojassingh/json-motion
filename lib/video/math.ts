@@ -7,8 +7,10 @@ import { SVG } from "mathjax-full/js/output/svg.js";
 import { type Image, loadImage } from "skia-canvas";
 import { AppError, toAppError } from "@/lib/errors";
 import type { VideoMathNode, VideoScene } from "@/lib/types/video";
+import { flattenSceneNodes } from "@/lib/video/nodes";
 
 const EX_TO_PX = 8;
+const DEFAULT_MATH_COLOR = "#f8fafc";
 
 const adaptor = liteAdaptor();
 RegisterHTMLHandler(adaptor);
@@ -18,26 +20,10 @@ const mathDoc = mathjax.document("", {
   OutputJax: new SVG({ fontCache: "none" }),
 });
 
-const collectMathNodes = (scenes: VideoScene[]): VideoMathNode[] => {
-  const nodes: VideoMathNode[] = [];
-
-  for (const scene of scenes) {
-    const stack = [...scene.nodes];
-    while (stack.length > 0) {
-      const node = stack.pop();
-      if (!node) {
-        continue;
-      }
-      if (node.type === "math") {
-        nodes.push(node);
-      } else if (node.type === "group") {
-        stack.push(...node.children);
-      }
-    }
-  }
-
-  return nodes;
-};
+const collectMathNodes = (scenes: VideoScene[]): VideoMathNode[] =>
+  flattenSceneNodes(scenes).filter(
+    (node): node is VideoMathNode => node.type === "math"
+  );
 
 const svgToPixelDimensions = (svg: string): string =>
   svg
@@ -63,6 +49,36 @@ const latexToSvg = (latex: string, color: string): string => {
   return svgToPixelDimensions(raw).replace(/currentColor/g, color);
 };
 
+export const buildMathCacheKey = (latex: string, color: string): string =>
+  `${latex}::${color}`;
+
+export const resolveMathDimensions = (
+  node: Pick<
+    VideoMathNode,
+    "color" | "fontSize" | "height" | "latex" | "width"
+  >,
+  mathImages?: Map<string, Image>
+): {
+  height: number;
+  width: number;
+} => {
+  const color = node.color ?? DEFAULT_MATH_COLOR;
+  const image = mathImages?.get(buildMathCacheKey(node.latex, color));
+
+  if (image && image.height > 0) {
+    const scale = node.fontSize / image.height;
+    return {
+      height: node.fontSize,
+      width: image.width * scale,
+    };
+  }
+
+  return {
+    height: node.height ?? 0,
+    width: node.width ?? 0,
+  };
+};
+
 export const preRenderMathNodes = async (
   scenes: VideoScene[]
 ): Promise<Map<string, Image>> => {
@@ -71,8 +87,8 @@ export const preRenderMathNodes = async (
 
   const seen = new Set<string>();
   for (const node of mathNodes) {
-    const color = node.color ?? "#f8fafc";
-    const key = `${node.latex}::${color}`;
+    const color = node.color ?? DEFAULT_MATH_COLOR;
+    const key = buildMathCacheKey(node.latex, color);
     if (seen.has(key)) {
       continue;
     }

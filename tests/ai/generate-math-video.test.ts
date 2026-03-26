@@ -3,17 +3,18 @@ import { existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { generateVideoDescriptionFromPrompt } from "@/lib/ai/generate-video-description";
+import { generateSceneJson } from "@/lib/actions/ai";
 import { renderVideo } from "@/lib/video/render-video";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 
 const TIMEOUT_MS = 180_000;
+const liveAiTest = process.env.AI_GATEWAY_API_KEY ? it : it.skip;
 
 describe("math and graph node integration", () => {
-  it(
+  liveAiTest(
     "generates a video with math/graph nodes and renders it end-to-end",
     async () => {
-      const videoDescription = await generateVideoDescriptionFromPrompt(
+      const videoDescription = await generateSceneJson(
         "Show the equation E=mc^2 and a sine wave graph animating from left to right"
       );
 

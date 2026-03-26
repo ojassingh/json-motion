@@ -1,4 +1,4 @@
-import { generateVideoDescriptionFromPrompt } from "../lib/ai/generate-video-description";
+import { generateSceneJson } from "../lib/actions/ai";
 import { renderVideo } from "../lib/video/render-video";
 
 const SAMPLE_PROMPT = "a simple square that fades in and turns round and round";
@@ -6,7 +6,7 @@ const SAMPLE_PROMPT = "a simple square that fades in and turns round and round";
 const runPromptToVideoSmoke = async (): Promise<void> => {
   console.log(`Prompt: ${SAMPLE_PROMPT}`);
 
-  const scene = await generateVideoDescriptionFromPrompt(SAMPLE_PROMPT);
+  const scene = await generateSceneJson(SAMPLE_PROMPT);
 
   console.log("Generated scene:");
   console.log(JSON.stringify(scene, null, 2));

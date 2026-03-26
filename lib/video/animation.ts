@@ -1,4 +1,6 @@
 import type {
+  ResolvedAlignNode,
+  ResolvedCenterNode,
   ResolvedFrame,
   ResolvedFunctionGraphNode,
   ResolvedGroupNode,
@@ -6,11 +8,12 @@ import type {
   ResolvedMathNode,
   ResolvedParametricGraphNode,
   ResolvedRectNode,
+  ResolvedStackNode,
   ResolvedTextNode,
   ResolvedVideoNode,
+  VideoAlignNode,
+  VideoCenterNode,
   VideoColor,
-  VideoColorAnimationStep,
-  VideoColorAnimationValue,
   VideoDescription,
   VideoEasingName,
   VideoFunctionGraphNode,
@@ -18,13 +21,11 @@ import type {
   VideoImageNode,
   VideoMathNode,
   VideoNode,
-  VideoNumericAnimationStep,
-  VideoNumericAnimationValue,
   VideoParametricGraphNode,
   VideoRectNode,
   VideoScene,
+  VideoStackNode,
   VideoTextNode,
-  VideoTimeValue,
 } from "@/lib/types/video";
 import { lerpOklch } from "@/lib/video/color";
 import {
@@ -34,6 +35,9 @@ import {
   DEFAULT_TEXT_FONT_SIZE,
   DEFAULT_TEXT_LINE_HEIGHT_MULTIPLIER,
 } from "@/lib/video/config";
+import { resolveLayout } from "@/lib/video/layout";
+import { resolveMathDimensions } from "@/lib/video/math";
+import type { PreRenderCaches } from "@/lib/video/pre-render";
 import {
   createEmptyResolvedFrame,
   getSceneForFrame,
@@ -42,6 +46,7 @@ import {
 
 type ColorAnimationProperty = "background" | "color" | "fill" | "stroke";
 type NumericAnimationProperty =
+  | "blur"
   | "drawProgress"
   | "fontSize"
   | "height"
@@ -77,6 +82,7 @@ export interface NormalizedNodeAnimations {
 const DEFAULT_ENTER_DURATION = 12;
 const DEFAULT_POP_DURATION = 12;
 const DEFAULT_WIGGLE_DURATION = 24;
+const DEFAULT_DRAW_DURATION = 60;
 
 const getEasedProgress = (
   progress: number,
@@ -85,107 +91,59 @@ const getEasedProgress = (
   if (easing === "ease-in") {
     return progress * progress;
   }
-
   if (easing === "ease-out") {
     return 1 - (1 - progress) * (1 - progress);
   }
-
   if (easing === "ease-in-out") {
     return progress < 0.5
       ? 2 * progress * progress
       : 1 - (-2 * progress + 2) ** 2 / 2;
   }
-
   if (easing === "ease-in-expo") {
     return progress === 0 ? 0 : 2 ** (10 * progress - 10);
   }
-
   if (easing === "ease-out-expo") {
     return progress === 1 ? 1 : 1 - 2 ** (-10 * progress);
   }
-
   if (easing === "ease-in-back") {
-    const overshoot = 1.701_58;
-
-    return (overshoot + 1) * progress ** 3 - overshoot * progress ** 2;
+    const c = 1.701_58;
+    return (c + 1) * progress ** 3 - c * progress ** 2;
   }
-
   if (easing === "ease-out-back") {
-    const overshoot = 1.701_58;
-    const invertedProgress = progress - 1;
-
-    return (
-      1 +
-      (overshoot + 1) * invertedProgress ** 3 +
-      overshoot * invertedProgress ** 2
-    );
+    const c = 1.701_58;
+    const p = progress - 1;
+    return 1 + (c + 1) * p ** 3 + c * p ** 2;
   }
-
   if (easing === "spring") {
     return 1 - Math.exp(-6 * progress) * Math.cos(progress * 10);
   }
-
   return progress;
 };
 
 const interpolate = (from: number, to: number, progress: number): number =>
   from + (to - from) * progress;
 
-const toAnimationSteps = <
-  TStep extends VideoColorAnimationStep | VideoNumericAnimationStep,
->(
-  value: TStep | TStep[] | undefined
-): TStep[] => {
-  if (!value) {
-    return [];
-  }
-
-  return Array.isArray(value) ? value : [value];
-};
-
-export const toFrameTime = (value: VideoTimeValue, fps: number): number =>
-  typeof value === "string"
-    ? Math.round(Number.parseFloat(value.slice(0, -1)) * fps)
-    : value;
-
-export const normalizeNumericAnimationValue = (
-  value: VideoNumericAnimationValue | undefined,
-  fps: number
-): NormalizedAnimationSegment<number>[] =>
-  toAnimationSteps(value).map((step) => ({
-    easing: step.easing ?? "ease-out",
-    endFrame: toFrameTime(step.end, fps),
-    from: step.from,
-    startFrame: toFrameTime(step.start ?? 0, fps),
-    to: step.to,
-  }));
-
-export const normalizeColorAnimationValue = (
-  value: VideoColorAnimationValue | undefined,
-  fps: number
-): NormalizedAnimationSegment<VideoColor>[] =>
-  toAnimationSteps(value).map((step) => ({
-    easing: step.easing ?? "ease-out",
-    endFrame: toFrameTime(step.end, fps),
-    from: step.from,
-    startFrame: toFrameTime(step.start ?? 0, fps),
-    to: step.to,
-  }));
+const secondsToFrames = (value: string, fps: number): number =>
+  Math.round(Number.parseFloat(value.slice(0, -1)) * fps);
 
 const appendNumericSegments = (
   target: NormalizedNodeAnimations["numbers"],
   property: NumericAnimationProperty,
   segments: NormalizedAnimationSegment<number>[]
 ): void => {
-  const existingSegments = target[property] ?? [];
-  target[property] = [...existingSegments, ...segments];
+  const existing = target[property] ?? [];
+  target[property] = [...existing, ...segments];
 };
 
 const getBaseNodeValues = (node: VideoNode) => {
   const uniformScale = node.scale ?? 1;
-
   return {
     anchor: node.anchor ?? "center",
+    blur: 0,
+    drawProgress:
+      node.type === "functionGraph" || node.type === "parametricGraph"
+        ? (node.drawProgress ?? 1)
+        : undefined,
     opacity: node.opacity ?? 1,
     rotation: node.rotate ?? 0,
     scaleX: node.scaleX ?? uniformScale,
@@ -205,16 +163,10 @@ const clampPrimitiveSegment = (
   const lastFrame = sceneDuration - 1;
   const startFrame = Math.max(segment.startFrame, 0);
   const endFrame = Math.min(segment.endFrame, lastFrame);
-
   if (startFrame > endFrame) {
     return null;
   }
-
-  return {
-    ...segment,
-    endFrame,
-    startFrame,
-  };
+  return { ...segment, endFrame, startFrame };
 };
 
 const createPrimitiveSegment = (
@@ -226,42 +178,33 @@ const createPrimitiveSegment = (
   easing: VideoEasingName
 ): NormalizedAnimationSegment<number> | null =>
   clampPrimitiveSegment(
-    {
-      easing,
-      endFrame,
-      from,
-      startFrame,
-      to,
-    },
+    { easing, endFrame, from, startFrame, to },
     sceneDuration
   );
 
 const filterValidSegments = (
   segments: Array<NormalizedAnimationSegment<number> | null>
 ): NormalizedAnimationSegment<number>[] =>
-  segments.filter(
-    (segment): segment is NormalizedAnimationSegment<number> => segment !== null
-  );
+  segments.filter((s): s is NormalizedAnimationSegment<number> => s !== null);
 
 const getPopScaleSegments = (
   baseScale: number,
   sceneDuration: number
 ): NormalizedAnimationSegment<number>[] => {
-  const midpoint = Math.max(Math.floor(DEFAULT_POP_DURATION / 2) - 1, 0);
-
+  const mid = Math.max(Math.floor(DEFAULT_POP_DURATION / 2) - 1, 0);
   return filterValidSegments([
     createPrimitiveSegment(
       baseScale,
       baseScale * 1.08,
       0,
-      midpoint,
+      mid,
       sceneDuration,
       "ease-out-back"
     ),
     createPrimitiveSegment(
       baseScale * 1.08,
       baseScale,
-      midpoint + 1,
+      mid + 1,
       DEFAULT_POP_DURATION - 1,
       sceneDuration,
       "ease-in-out"
@@ -317,6 +260,58 @@ const getPrimitiveNumericEntries = (
   segments: NormalizedAnimationSegment<number>[];
 }> => {
   const lastFrame = sceneDuration - 1;
+
+  if (primitive === "BlurFadeIn") {
+    return [
+      {
+        property: "opacity",
+        segments: filterValidSegments([
+          createPrimitiveSegment(
+            0,
+            baseValues.opacity,
+            0,
+            DEFAULT_ENTER_DURATION - 1,
+            sceneDuration,
+            "ease-out"
+          ),
+        ]),
+      },
+      {
+        property: "blur",
+        segments: filterValidSegments([
+          createPrimitiveSegment(
+            8,
+            0,
+            0,
+            DEFAULT_ENTER_DURATION - 1,
+            sceneDuration,
+            "ease-out"
+          ),
+        ]),
+      },
+    ];
+  }
+
+  if (primitive === "DrawIn") {
+    if (baseValues.drawProgress === undefined) {
+      return [];
+    }
+    return [
+      {
+        property: "drawProgress",
+        segments: filterValidSegments([
+          createPrimitiveSegment(
+            0,
+            baseValues.drawProgress,
+            0,
+            DEFAULT_DRAW_DURATION - 1,
+            sceneDuration,
+            "ease-in-out"
+          ),
+        ]),
+      },
+    ];
+  }
 
   if (primitive === "FadeIn") {
     return [
@@ -428,12 +423,8 @@ const getPrimitiveAnimations = (
   node: VideoNode,
   sceneDuration: number
 ): NormalizedNodeAnimations => {
-  const animations: NormalizedNodeAnimations = {
-    colors: {},
-    numbers: {},
-  };
+  const animations: NormalizedNodeAnimations = { colors: {}, numbers: {} };
   const baseValues = getBaseNodeValues(node);
-
   for (const primitive of node.primitives ?? []) {
     for (const entry of getPrimitiveNumericEntries(
       primitive,
@@ -443,272 +434,251 @@ const getPrimitiveAnimations = (
       appendNumericSegments(animations.numbers, entry.property, entry.segments);
     }
   }
-
   return animations;
 };
 
-const getCommonExplicitAnimations = (
+interface SimpleAnimProp {
+  defaultVal: (n: VideoNode) => number;
+  resultKey: NumericAnimationProperty;
+  stateKey: "blur" | "opacity" | "rotate" | "skewX" | "skewY" | "x" | "y";
+}
+
+const SIMPLE_ANIM_PROPS: SimpleAnimProp[] = [
+  {
+    defaultVal: (n) => n.opacity ?? 1,
+    resultKey: "opacity",
+    stateKey: "opacity",
+  },
+  { defaultVal: (n) => n.x ?? 0, resultKey: "x", stateKey: "x" },
+  { defaultVal: (n) => n.y ?? 0, resultKey: "y", stateKey: "y" },
+  {
+    defaultVal: (n) => n.rotate ?? 0,
+    resultKey: "rotation",
+    stateKey: "rotate",
+  },
+  { defaultVal: () => 0, resultKey: "blur", stateKey: "blur" },
+  { defaultVal: (n) => n.skewX ?? 0, resultKey: "skewX", stateKey: "skewX" },
+  { defaultVal: (n) => n.skewY ?? 0, resultKey: "skewY", stateKey: "skewY" },
+];
+
+const applyEnterScale = (
+  result: NormalizedNodeAnimations["numbers"],
+  initial: { scale?: number; scaleX?: number; scaleY?: number },
   node: VideoNode,
-  fps: number
-): NormalizedNodeAnimations["numbers"] => {
-  const animations: NormalizedNodeAnimations["numbers"] = {};
-  const animate = node.animate;
-
-  if (!animate) {
-    return animations;
+  startFrame: number,
+  endFrame: number,
+  easing: VideoEasingName
+): void => {
+  const uniformScale = node.scale ?? 1;
+  if (initial.scale !== undefined && !initial.scaleX) {
+    result.scaleX = [
+      {
+        easing,
+        endFrame,
+        from: initial.scale,
+        startFrame,
+        to: node.scaleX ?? uniformScale,
+      },
+    ];
   }
-
-  if (animate.opacity) {
-    animations.opacity = normalizeNumericAnimationValue(animate.opacity, fps);
+  if (initial.scale !== undefined && !initial.scaleY) {
+    result.scaleY = [
+      {
+        easing,
+        endFrame,
+        from: initial.scale,
+        startFrame,
+        to: node.scaleY ?? uniformScale,
+      },
+    ];
   }
-
-  if (animate.rotate) {
-    animations.rotation = normalizeNumericAnimationValue(animate.rotate, fps);
+  if (initial.scaleX !== undefined) {
+    result.scaleX = [
+      {
+        easing,
+        endFrame,
+        from: initial.scaleX,
+        startFrame,
+        to: node.scaleX ?? uniformScale,
+      },
+    ];
   }
-
-  if (animate.skewX) {
-    animations.skewX = normalizeNumericAnimationValue(animate.skewX, fps);
+  if (initial.scaleY !== undefined) {
+    result.scaleY = [
+      {
+        easing,
+        endFrame,
+        from: initial.scaleY,
+        startFrame,
+        to: node.scaleY ?? uniformScale,
+      },
+    ];
   }
-
-  if (animate.skewY) {
-    animations.skewY = normalizeNumericAnimationValue(animate.skewY, fps);
-  }
-
-  if (animate.x) {
-    animations.x = normalizeNumericAnimationValue(animate.x, fps);
-  }
-
-  if (animate.y) {
-    animations.y = normalizeNumericAnimationValue(animate.y, fps);
-  }
-
-  if (animate.scale) {
-    const scaleAnimations = normalizeNumericAnimationValue(animate.scale, fps);
-
-    if (!animate.scaleX) {
-      animations.scaleX = scaleAnimations;
-    }
-
-    if (!animate.scaleY) {
-      animations.scaleY = scaleAnimations;
-    }
-  }
-
-  if (animate.scaleX) {
-    animations.scaleX = normalizeNumericAnimationValue(animate.scaleX, fps);
-  }
-
-  if (animate.scaleY) {
-    animations.scaleY = normalizeNumericAnimationValue(animate.scaleY, fps);
-  }
-
-  return animations;
 };
 
-const getRectExplicitAnimations = (
-  node: VideoRectNode,
-  fps: number
-): NormalizedNodeAnimations => ({
-  colors: {
-    ...(node.animate?.fill
-      ? {
-          fill: normalizeColorAnimationValue(node.animate.fill, fps),
-        }
-      : {}),
-    ...(node.animate?.stroke
-      ? {
-          stroke: normalizeColorAnimationValue(node.animate.stroke, fps),
-        }
-      : {}),
-  },
-  numbers: {
-    ...(node.animate?.cornerRadius
-      ? {
-          radius: normalizeNumericAnimationValue(
-            node.animate.cornerRadius,
-            fps
-          ),
-        }
-      : {}),
-    ...(node.animate?.height
-      ? {
-          height: normalizeNumericAnimationValue(node.animate.height, fps),
-        }
-      : {}),
-    ...(node.animate?.strokeWidth
-      ? {
-          strokeWidth: normalizeNumericAnimationValue(
-            node.animate.strokeWidth,
-            fps
-          ),
-        }
-      : {}),
-    ...(node.animate?.width
-      ? {
-          width: normalizeNumericAnimationValue(node.animate.width, fps),
-        }
-      : {}),
-  },
-});
+const applyExitScale = (
+  result: NormalizedNodeAnimations["numbers"],
+  exit: { scale?: number; scaleX?: number; scaleY?: number },
+  node: VideoNode,
+  startFrame: number,
+  endFrame: number,
+  easing: VideoEasingName
+): void => {
+  const uniformScale = node.scale ?? 1;
+  if (exit.scale !== undefined && !exit.scaleX) {
+    result.scaleX = [
+      {
+        easing,
+        endFrame,
+        from: node.scaleX ?? uniformScale,
+        startFrame,
+        to: exit.scale,
+      },
+    ];
+  }
+  if (exit.scale !== undefined && !exit.scaleY) {
+    result.scaleY = [
+      {
+        easing,
+        endFrame,
+        from: node.scaleY ?? uniformScale,
+        startFrame,
+        to: exit.scale,
+      },
+    ];
+  }
+  if (exit.scaleX !== undefined) {
+    result.scaleX = [
+      {
+        easing,
+        endFrame,
+        from: node.scaleX ?? uniformScale,
+        startFrame,
+        to: exit.scaleX,
+      },
+    ];
+  }
+  if (exit.scaleY !== undefined) {
+    result.scaleY = [
+      {
+        easing,
+        endFrame,
+        from: node.scaleY ?? uniformScale,
+        startFrame,
+        to: exit.scaleY,
+      },
+    ];
+  }
+};
 
-const getTextExplicitAnimations = (
-  node: VideoTextNode,
-  fps: number
-): NormalizedNodeAnimations => ({
-  colors: {
-    ...(node.animate?.color
-      ? {
-          color: normalizeColorAnimationValue(node.animate.color, fps),
-        }
-      : {}),
-  },
-  numbers: {
-    ...(node.animate?.size
-      ? {
-          fontSize: normalizeNumericAnimationValue(node.animate.size, fps),
-        }
-      : {}),
-  },
-});
+/**
+ * Builds enter animation segments from `initial` + `transition`.
+ * The engine computes start/end frames — the AI only provides seconds.
+ */
+const getEnterAnimations = (
+  node: VideoNode,
+  fps: number,
+  sceneDuration: number
+): NormalizedNodeAnimations["numbers"] => {
+  const { initial, transition } = node;
+  if (!(initial && transition)) {
+    return {};
+  }
 
-const getImageExplicitAnimations = (
-  node: VideoImageNode,
-  fps: number
-): NormalizedNodeAnimations => ({
-  colors: {},
-  numbers: {
-    ...(node.animate?.height
-      ? {
-          height: normalizeNumericAnimationValue(node.animate.height, fps),
-        }
-      : {}),
-    ...(node.animate?.width
-      ? {
-          width: normalizeNumericAnimationValue(node.animate.width, fps),
-        }
-      : {}),
-  },
-});
+  const delay = transition.delay ? secondsToFrames(transition.delay, fps) : 0;
+  const duration = secondsToFrames(transition.duration, fps);
+  const startFrame = delay;
+  const endFrame = Math.min(delay + duration, sceneDuration - 1);
+  const easing = transition.easing ?? "ease-out";
+  const result: NormalizedNodeAnimations["numbers"] = {};
 
-const getMathExplicitAnimations = (
-  _node: VideoMathNode,
-  _fps: number
-): NormalizedNodeAnimations => ({ colors: {}, numbers: {} });
+  for (const { stateKey, resultKey, defaultVal } of SIMPLE_ANIM_PROPS) {
+    const val = initial[stateKey];
+    if (val !== undefined) {
+      result[resultKey] = [
+        { easing, endFrame, from: val, startFrame, to: defaultVal(node) },
+      ];
+    }
+  }
 
-const getFunctionGraphExplicitAnimations = (
-  node: VideoFunctionGraphNode,
-  fps: number
-): NormalizedNodeAnimations => ({
-  colors: {
-    ...(node.animate?.color
-      ? { color: normalizeColorAnimationValue(node.animate.color, fps) }
-      : {}),
-  },
-  numbers: {
-    ...(node.animate?.drawProgress
-      ? {
-          drawProgress: normalizeNumericAnimationValue(
-            node.animate.drawProgress,
-            fps
-          ),
-        }
-      : {}),
-    ...(node.animate?.strokeWidth
-      ? {
-          strokeWidth: normalizeNumericAnimationValue(
-            node.animate.strokeWidth,
-            fps
-          ),
-        }
-      : {}),
-  },
-});
+  applyEnterScale(result, initial, node, startFrame, endFrame, easing);
+  return result;
+};
 
-const getParametricGraphExplicitAnimations = (
-  node: VideoParametricGraphNode,
-  fps: number
-): NormalizedNodeAnimations => ({
-  colors: {
-    ...(node.animate?.color
-      ? { color: normalizeColorAnimationValue(node.animate.color, fps) }
-      : {}),
-  },
-  numbers: {
-    ...(node.animate?.drawProgress
-      ? {
-          drawProgress: normalizeNumericAnimationValue(
-            node.animate.drawProgress,
-            fps
-          ),
-        }
-      : {}),
-    ...(node.animate?.strokeWidth
-      ? {
-          strokeWidth: normalizeNumericAnimationValue(
-            node.animate.strokeWidth,
-            fps
-          ),
-        }
-      : {}),
-  },
-});
+/**
+ * Builds exit animation segments from `exit` + `exitTransition`.
+ * The exit window is anchored to the end of the scene.
+ */
+const getExitAnimations = (
+  node: VideoNode,
+  fps: number,
+  sceneDuration: number
+): NormalizedNodeAnimations["numbers"] => {
+  const { exit, exitTransition } = node;
+  if (!(exit && exitTransition)) {
+    return {};
+  }
 
-const mergeAnimations = (
-  primitiveAnimations: NormalizedNodeAnimations,
-  explicitAnimations: NormalizedNodeAnimations
-): NormalizedNodeAnimations => ({
-  colors: {
-    ...primitiveAnimations.colors,
-    ...explicitAnimations.colors,
-  },
-  numbers: {
-    ...primitiveAnimations.numbers,
-    ...explicitAnimations.numbers,
-  },
-});
+  const duration = secondsToFrames(exitTransition.duration, fps);
+  const endFrame = sceneDuration - 1;
+  const startFrame = Math.max(0, sceneDuration - duration);
+  const easing = exitTransition.easing ?? "ease-in";
+  const result: NormalizedNodeAnimations["numbers"] = {};
+
+  for (const { stateKey, resultKey, defaultVal } of SIMPLE_ANIM_PROPS) {
+    const val = exit[stateKey];
+    if (val !== undefined) {
+      result[resultKey] = [
+        { easing, endFrame, from: defaultVal(node), startFrame, to: val },
+      ];
+    }
+  }
+
+  applyExitScale(result, exit, node, startFrame, endFrame, easing);
+  return result;
+};
+
+/**
+ * Merges primitive, enter, and exit animations with clear precedence:
+ * - Explicit enter overrides primitives for the same property.
+ * - Explicit exit appends to the result (enter + primitive) since they
+ *   cover different time windows and should both play.
+ */
+const mergeNodeAnimations = (
+  primitive: NormalizedNodeAnimations,
+  enter: NormalizedNodeAnimations["numbers"],
+  exit: NormalizedNodeAnimations["numbers"]
+): NormalizedNodeAnimations => {
+  const numbers: NormalizedNodeAnimations["numbers"] = { ...primitive.numbers };
+
+  for (const key of Object.keys(enter) as NumericAnimationProperty[]) {
+    numbers[key] = enter[key];
+  }
+
+  for (const key of Object.keys(exit) as NumericAnimationProperty[]) {
+    const existing = numbers[key] ?? [];
+    numbers[key] = [...existing, ...(exit[key] ?? [])];
+  }
+
+  return { colors: primitive.colors, numbers };
+};
 
 export const normalizeNodeAnimations = (
   node: VideoNode,
   fps: number,
   sceneDuration: number
-): NormalizedNodeAnimations => {
-  const primitiveAnimations = getPrimitiveAnimations(node, sceneDuration);
-  const commonAnimations: NormalizedNodeAnimations = {
-    colors: {},
-    numbers: getCommonExplicitAnimations(node, fps),
-  };
-  let typeSpecificAnimations: NormalizedNodeAnimations = {
-    colors: {},
-    numbers: {},
-  };
-
-  if (node.type === "rect") {
-    typeSpecificAnimations = getRectExplicitAnimations(node, fps);
-  } else if (node.type === "text") {
-    typeSpecificAnimations = getTextExplicitAnimations(node, fps);
-  } else if (node.type === "image") {
-    typeSpecificAnimations = getImageExplicitAnimations(node, fps);
-  } else if (node.type === "math") {
-    typeSpecificAnimations = getMathExplicitAnimations(node, fps);
-  } else if (node.type === "functionGraph") {
-    typeSpecificAnimations = getFunctionGraphExplicitAnimations(node, fps);
-  } else if (node.type === "parametricGraph") {
-    typeSpecificAnimations = getParametricGraphExplicitAnimations(node, fps);
-  }
-
-  return mergeAnimations(
-    primitiveAnimations,
-    mergeAnimations(commonAnimations, typeSpecificAnimations)
+): NormalizedNodeAnimations =>
+  mergeNodeAnimations(
+    getPrimitiveAnimations(node, sceneDuration),
+    getEnterAnimations(node, fps, sceneDuration),
+    getExitAnimations(node, fps, sceneDuration)
   );
-};
 
-export const normalizeSceneBackgroundAnimations = (
-  scene: VideoScene,
-  fps: number
-): NormalizedAnimationSegment<VideoColor>[] =>
-  typeof scene.background === "string"
-    ? []
-    : normalizeColorAnimationValue(scene.background, fps);
+const sortResolvedNodes = (nodes: ResolvedVideoNode[]): ResolvedVideoNode[] =>
+  nodes.toSorted((a, b) => {
+    const diff = a.zIndex - b.zIndex;
+    return diff === 0 ? a.sourceIndex - b.sourceIndex : diff;
+  });
 
 const resolveAnimationProgress = (
   frame: number,
@@ -717,7 +687,6 @@ const resolveAnimationProgress = (
   if (segment.startFrame === segment.endFrame) {
     return 1;
   }
-
   const boundedProgress = Math.min(
     Math.max(
       (frame - segment.startFrame) / (segment.endFrame - segment.startFrame),
@@ -725,7 +694,6 @@ const resolveAnimationProgress = (
     ),
     1
   );
-
   return getEasedProgress(boundedProgress, segment.easing);
 };
 
@@ -739,12 +707,10 @@ const resolveAnimatedNumericValue = (
   }
 
   let resolvedValue = baseValue;
-
   for (const segment of segments) {
     if (frame < segment.startFrame) {
       return resolvedValue;
     }
-
     if (frame <= segment.endFrame) {
       return interpolate(
         segment.from,
@@ -752,10 +718,8 @@ const resolveAnimatedNumericValue = (
         resolveAnimationProgress(frame, segment)
       );
     }
-
     resolvedValue = segment.to;
   }
-
   return resolvedValue;
 };
 
@@ -769,12 +733,10 @@ const resolveAnimatedColorValue = (
   }
 
   let resolvedValue = baseValue ?? segments[0]?.from;
-
   for (const segment of segments) {
     if (frame < segment.startFrame) {
       return resolvedValue;
     }
-
     if (frame <= segment.endFrame) {
       return lerpOklch(
         segment.from,
@@ -782,23 +744,10 @@ const resolveAnimatedColorValue = (
         resolveAnimationProgress(frame, segment)
       );
     }
-
     resolvedValue = segment.to;
   }
-
   return resolvedValue;
 };
-
-const sortResolvedNodes = (nodes: ResolvedVideoNode[]): ResolvedVideoNode[] =>
-  nodes.toSorted((leftNode, rightNode) => {
-    const zIndexDifference = leftNode.zIndex - rightNode.zIndex;
-
-    if (zIndexDifference !== 0) {
-      return zIndexDifference;
-    }
-
-    return leftNode.sourceIndex - rightNode.sourceIndex;
-  });
 
 const resolveBaseNode = (
   node: VideoNode,
@@ -812,6 +761,11 @@ const resolveBaseNode = (
 
   return {
     anchor: baseValues.anchor,
+    blur: resolveAnimatedNumericValue(
+      baseValues.blur,
+      animations.numbers.blur,
+      localFrame
+    ),
     id: node.id,
     opacity: resolveAnimatedNumericValue(
       baseValues.opacity,
@@ -858,20 +812,93 @@ const resolveBaseNode = (
   };
 };
 
+const resolveChildNodes = (
+  children: VideoNode[],
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  caches?: PreRenderCaches
+): ResolvedVideoNode[] =>
+  sortResolvedNodes(
+    children.map((child, i) =>
+      resolveVideoNode(child, fps, sceneDuration, localFrame, i, caches)
+    )
+  );
+
 const resolveGroupNode = (
   node: VideoGroupNode,
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedGroupNode => ({
   ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
-  children: sortResolvedNodes(
-    node.children.map((childNode: VideoNode, childIndex: number) =>
-      resolveVideoNode(childNode, fps, sceneDuration, localFrame, childIndex)
-    )
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
   ),
   type: "group",
+});
+
+const resolveCenterNode = (
+  node: VideoCenterNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number,
+  caches?: PreRenderCaches
+): ResolvedCenterNode => ({
+  ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
+  type: "center",
+});
+
+const resolveStackNode = (
+  node: VideoStackNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number,
+  caches?: PreRenderCaches
+): ResolvedStackNode => ({
+  ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
+  type: "stack",
+});
+
+const resolveAlignNode = (
+  node: VideoAlignNode,
+  fps: number,
+  sceneDuration: number,
+  localFrame: number,
+  sourceIndex: number,
+  caches?: PreRenderCaches
+): ResolvedAlignNode => ({
+  ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
+  children: resolveChildNodes(
+    node.children,
+    fps,
+    sceneDuration,
+    localFrame,
+    caches
+  ),
+  type: "align",
 });
 
 const resolveRectNode = (
@@ -882,7 +909,6 @@ const resolveRectNode = (
   sourceIndex: number
 ): ResolvedRectNode => {
   const animations = normalizeNodeAnimations(node, fps, sceneDuration);
-
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     fill: resolveAnimatedColorValue(
@@ -932,7 +958,6 @@ const resolveTextNode = (
     animations.numbers.fontSize,
     localFrame
   );
-
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     color:
@@ -961,7 +986,6 @@ const resolveImageNode = (
   sourceIndex: number
 ): ResolvedImageNode => {
   const animations = normalizeNodeAnimations(node, fps, sceneDuration);
-
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     fit: node.fit ?? "cover",
@@ -989,10 +1013,11 @@ const resolveMathNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedMathNode => {
   const animations = normalizeNodeAnimations(node, fps, sceneDuration);
-
+  const { height, width } = resolveMathDimensions(node, caches?.mathImages);
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     color:
@@ -1002,10 +1027,10 @@ const resolveMathNode = (
         localFrame
       ) ?? DEFAULT_MATH_COLOR,
     fontSize: node.fontSize,
-    height: node.height,
+    height,
     latex: node.latex,
     type: "math",
-    width: node.width,
+    width,
   };
 };
 
@@ -1017,7 +1042,6 @@ const resolveFunctionGraphNode = (
   sourceIndex: number
 ): ResolvedFunctionGraphNode => {
   const animations = normalizeNodeAnimations(node, fps, sceneDuration);
-
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     color:
@@ -1054,7 +1078,6 @@ const resolveParametricGraphNode = (
   sourceIndex: number
 ): ResolvedParametricGraphNode => {
   const animations = normalizeNodeAnimations(node, fps, sceneDuration);
-
   return {
     ...resolveBaseNode(node, fps, sceneDuration, localFrame, sourceIndex),
     color:
@@ -1084,24 +1107,65 @@ export const resolveVideoNode = (
   fps: number,
   sceneDuration: number,
   localFrame: number,
-  sourceIndex: number
+  sourceIndex: number,
+  caches?: PreRenderCaches
 ): ResolvedVideoNode => {
   if (node.type === "group") {
-    return resolveGroupNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveGroupNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
-
+  if (node.type === "center") {
+    return resolveCenterNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
+  }
+  if (node.type === "stack") {
+    return resolveStackNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
+  }
+  if (node.type === "align") {
+    return resolveAlignNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
+  }
   if (node.type === "rect") {
     return resolveRectNode(node, fps, sceneDuration, localFrame, sourceIndex);
   }
-
   if (node.type === "text") {
     return resolveTextNode(node, fps, sceneDuration, localFrame, sourceIndex);
   }
-
   if (node.type === "math") {
-    return resolveMathNode(node, fps, sceneDuration, localFrame, sourceIndex);
+    return resolveMathNode(
+      node,
+      fps,
+      sceneDuration,
+      localFrame,
+      sourceIndex,
+      caches
+    );
   }
-
   if (node.type === "functionGraph") {
     return resolveFunctionGraphNode(
       node,
@@ -1111,7 +1175,6 @@ export const resolveVideoNode = (
       sourceIndex
     );
   }
-
   if (node.type === "parametricGraph") {
     return resolveParametricGraphNode(
       node,
@@ -1121,39 +1184,31 @@ export const resolveVideoNode = (
       sourceIndex
     );
   }
-
   return resolveImageNode(node, fps, sceneDuration, localFrame, sourceIndex);
 };
 
 export const resolveSceneNodes = (
   scene: VideoScene,
   fps: number,
-  localFrame: number
+  localFrame: number,
+  caches?: PreRenderCaches
 ): ResolvedVideoNode[] =>
   sortResolvedNodes(
-    scene.nodes.map((node, sourceIndex) =>
-      resolveVideoNode(node, fps, scene.duration, localFrame, sourceIndex)
+    scene.nodes.map((node, i) =>
+      resolveVideoNode(node, fps, scene.duration, localFrame, i, caches)
     )
   );
 
 const resolveSceneBackground = (
   videoDescription: VideoDescription,
-  scene: VideoScene,
-  localFrame: number
+  scene: VideoScene
 ): VideoColor =>
-  resolveAnimatedColorValue(
-    typeof scene.background === "string"
-      ? scene.background
-      : (videoDescription.background ?? DEFAULT_SCENE_BACKGROUND),
-    normalizeSceneBackgroundAnimations(scene, videoDescription.fps),
-    localFrame
-  ) ??
-  videoDescription.background ??
-  DEFAULT_SCENE_BACKGROUND;
+  scene.background ?? videoDescription.background ?? DEFAULT_SCENE_BACKGROUND;
 
 export const resolveFrame = (
   videoDescription: VideoDescription,
-  absoluteFrame: number
+  absoluteFrame: number,
+  caches?: PreRenderCaches
 ): ResolvedFrame => {
   const scene = getSceneForFrame(videoDescription, absoluteFrame);
 
@@ -1162,12 +1217,23 @@ export const resolveFrame = (
   }
 
   const localFrame = getSceneLocalFrame(scene, absoluteFrame);
+  const layoutNodes = resolveLayout(
+    scene.nodes,
+    videoDescription.width,
+    videoDescription.height,
+    caches
+  );
 
   return {
     absoluteFrame,
-    background: resolveSceneBackground(videoDescription, scene, localFrame),
+    background: resolveSceneBackground(videoDescription, scene),
     localFrame,
-    nodes: resolveSceneNodes(scene, videoDescription.fps, localFrame),
+    nodes: resolveSceneNodes(
+      { ...scene, nodes: layoutNodes },
+      videoDescription.fps,
+      localFrame,
+      caches
+    ),
     scene,
   };
 };

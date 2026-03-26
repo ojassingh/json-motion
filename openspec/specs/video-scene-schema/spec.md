@@ -2,6 +2,7 @@
 
 ## Purpose
 Define the validated shape and animation rules for video descriptions accepted by the renderer.
+
 ## Requirements
 
 ### Requirement: Video descriptions declare deterministic output metadata and scene timing
@@ -12,41 +13,71 @@ The system SHALL accept a video description object that includes output metadata
 - **THEN** the request validates successfully and the renderer receives deterministic timing information for both scenes
 
 ### Requirement: Nodes define explicit transforms and deterministic defaults
-The system SHALL allow each node to declare base transform and visual properties directly on the node, and the following properties SHALL accept either a static value or an animation object: `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `x`, `y`, `fill`, `stroke`, `strokeWidth`, `cornerRadius`, `width`, `height`, `color`, and `size`. Nodes SHALL use a single semantic `anchor` value instead of pixel anchor coordinates, `x` and `y` SHALL replace nested position data, and omitted optional properties SHALL resolve to documented defaults, including `anchor: "center"` when omitted.
+The system SHALL allow each node to declare base transform and visual properties directly on the node, and the following properties SHALL accept either a static value or an animation object: `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `x`, `y`, `fill`, `stroke`, `strokeWidth`, `cornerRadius`, `width`, `height`, `color`, and `size`. Nodes SHALL use a single semantic `anchor` value instead of pixel anchor coordinates, `x` and `y` SHALL replace nested position data, and omitted optional properties SHALL resolve to documented defaults, including `anchor: "center"` when omitted. Text nodes SHALL have their effective width computed by the renderer via text measurement when `maxWidth` is not provided, ensuring that anchor-based positioning, especially `anchor: "center"`, works correctly regardless of whether `maxWidth` is specified.
 
 #### Scenario: Optional transform fields fall back to defaults
 - **WHEN** a `rect` node omits `rotate`, `skewX`, `skewY`, `opacity`, and `anchor`
 - **THEN** validation succeeds and the renderer resolves those fields to documented default values instead of leaving them undefined
 
+#### Scenario: Text node with anchor center and no maxWidth is centered correctly
+- **WHEN** a `text` node has `anchor: "center"`, `x: 480`, `y: 270`, `text: "Hello"`, and no `maxWidth`
+- **THEN** the renderer measures the text width and uses it for anchor offset computation, placing the text visually centered at (480, 270)
+
 ### Requirement: Nodes support declarative animations with explicit frame windows
-The system SHALL allow each node to declare one optional `animate` object keyed by animatable property name. Each property value SHALL accept an object with `from`, `to`, and `end` fields plus optional `start` and `easing` fields, or an array of those objects for multi-step motion; omitted `start` SHALL default to `0`, omitted easing SHALL default to `ease-out`, and every animation window SHALL fit within the containing scene duration. Animation time values SHALL accept non-negative frame numbers or strings ending in `s`, and nodes MAY also declare a `primitives` array containing only `FadeIn`, `FadeOut`, `SlideIn`, `ScaleIn`, `Pop`, and `Wiggle`.
+The system SHALL allow each node to declare one optional `animate` object keyed by animatable property name. Each property value SHALL accept an object with `from`, `to`, and `end` fields plus optional `start` and `easing` fields, or an array of those objects for multi-step motion; omitted `start` SHALL default to `0`, omitted easing SHALL default to `ease-out`, and every animation window SHALL fit within the containing scene duration. Animation time values SHALL accept non-negative frame numbers or strings ending in `s`, and nodes MAY also declare a `primitives` array containing only `FadeIn`, `FadeOut`, `SlideIn`, `ScaleIn`, `Pop`, `Wiggle`, and `DrawIn`.
 
 #### Scenario: A multi-step animation validates within scene bounds
 - **WHEN** a `text` node declares `animate.fill` as two animation objects and `animate.opacity` as `{ "from": 0, "to": 1, "end": "0.5s" }` inside a 60-frame scene
 - **THEN** the request validates successfully and the animation data is available to the frame resolver
 
 ### Requirement: Invalid scene descriptions are rejected before rendering
-The system SHALL reject render requests that contain unsupported node types, duplicate node ids within a scene, missing required node fields, malformed animation objects, unsupported easing names, legacy `animations` or `animationPrimitives` arrays, pixel anchor fields, nested `position` objects, or animation ranges that extend beyond the containing scene duration. The set of supported node types SHALL be `group`, `rect`, `text`, `image`, `math`, `functionGraph`, and `parametricGraph`.
+The system SHALL reject render requests that contain unsupported node types, duplicate node ids within a scene, missing required node fields, malformed animation objects, unsupported easing names, legacy `animations` or `animationPrimitives` arrays, pixel anchor fields, nested `position` objects, or animation ranges that extend beyond the containing scene duration. The supported node types SHALL be `group`, `rect`, `text`, `image`, `math`, `functionGraph`, `parametricGraph`, `center`, `stack`, and `align`.
 
 #### Scenario: Unsupported node types fail validation
 - **WHEN** a render request contains a node with type `chart`
 - **THEN** the API rejects the request before any frame rendering or encoding begins
 
-#### Scenario: The new node types pass validation with required fields
-- **WHEN** a render request contains valid `math`, `functionGraph`, and `parametricGraph` nodes with all required fields
+#### Scenario: The supported node types pass validation with required fields
+- **WHEN** a render request contains valid `math`, `functionGraph`, `parametricGraph`, `center`, `stack`, and `align` nodes with all required fields
 - **THEN** the request validates successfully
 
-### Requirement: The node discriminated union includes math, functionGraph, and parametricGraph types
-The `videoNodeSchema` discriminated union SHALL include `math`, `functionGraph`, and `parametricGraph` alongside the existing `group`, `rect`, `text`, and `image` types. Each new type SHALL declare its own required and optional fields and its own animate schema that extends the base animate schema with type-specific animatable properties.
+### Requirement: The node discriminated union includes layout node types alongside existing types
+The `videoNodeSchema` discriminated union SHALL include `center`, `stack`, and `align` layout node types alongside the existing `group`, `rect`, `text`, `image`, `math`, `functionGraph`, and `parametricGraph` types. Each layout type SHALL declare its own required and optional fields. Layout nodes SHALL be valid children of `group` nodes and valid root-level scene nodes.
 
-#### Scenario: A math node with all fields passes schema validation
-- **WHEN** a node declares `type: "math"`, `id`, `latex`, `fontSize`, `width`, `height`, and optional `color`
+#### Scenario: A stack node passes schema validation
+- **WHEN** a node declares `type: "stack"`, `id`, `direction: "vertical"`, `gap: 16`, and a `children` array
 - **THEN** the Zod schema parses it successfully
 
-#### Scenario: A functionGraph node with animate block passes schema validation
-- **WHEN** a node declares `type: "functionGraph"`, `id`, `fn`, `xRange`, `yRange`, `width`, `height`, and `animate: { drawProgress: { from: 0, to: 1, end: 30 } }`
+#### Scenario: A center node passes schema validation
+- **WHEN** a node declares `type: "center"`, `id`, and a single-element `children` array
 - **THEN** the Zod schema parses it successfully
 
-#### Scenario: A parametricGraph node passes schema validation
-- **WHEN** a node declares `type: "parametricGraph"`, `id`, `fnX`, `fnY`, `tRange`, `width`, `height`
+#### Scenario: An align node passes schema validation
+- **WHEN** a node declares `type: "align"`, `id`, `position: "top-center"`, `padding: 40`, and a single-element `children` array
 - **THEN** the Zod schema parses it successfully
+
+#### Scenario: Layout nodes are valid inside groups
+- **WHEN** a `group` node contains a `center` child which contains a `rect`
+- **THEN** the schema validates the nested structure successfully
+
+### Requirement: Math node width and height are optional in the engine schema
+The system SHALL accept a `math` node where `width` and `height` are optional fields. When present, they serve as fallback layout hints when no pre-render cache is available. When absent, the resolved dimensions SHALL be computed from the pre-render cache and `fontSize`. All other math node fields remain unchanged.
+
+#### Scenario: A math node without width and height passes engine schema validation
+- **WHEN** a render request includes a `math` node with `latex`, `fontSize`, and `color` but no `width` or `height`
+- **THEN** `videoDescriptionSchema` parses it successfully
+
+#### Scenario: A math node with width and height still passes engine schema validation
+- **WHEN** a render request includes a `math` node with `latex`, `fontSize`, `width: 400`, and `height: 80`
+- **THEN** `videoDescriptionSchema` parses it successfully, maintaining backward compatibility
+
+### Requirement: Invalid scene descriptions reject invalid layout node configurations
+The system SHALL reject render requests that contain `center` or `align` nodes with more than one child, `stack` nodes with invalid `direction` values, or `align` nodes with invalid `position` values. The schema SHALL enforce these constraints via Zod validation.
+
+#### Scenario: A center node with multiple children fails validation
+- **WHEN** a `center` node declares a `children` array with two elements
+- **THEN** Zod schema validation rejects the request
+
+#### Scenario: A stack with invalid direction fails validation
+- **WHEN** a `stack` node declares `direction: "diagonal"`
+- **THEN** Zod schema validation rejects the request

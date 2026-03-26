@@ -1,16 +1,50 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Check, Copy, Loader2 } from "lucide-react";
+import { useContext, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { VideoResult } from "@/components/video-result";
 import type { RenderVideoResponse } from "@/lib/types/prompt-to-video";
 import type { VideoDescription } from "@/lib/types/video";
-import type { Phase } from "./context";
-import { useHome } from "./context";
+import type { Phase } from "@/lib/types/video-generation";
+import { cn } from "@/lib/utils";
+import { PlaygroundContext } from "../playground/_components/context";
+import { HomeContext } from "./context";
 import { SCENE_JSON_INDENTATION } from "./helpers";
 
-export function PreviewPanel() {
-  const { phase, pendingScene, latestScene, latestVideo } = useHome();
-  const displayScene = pendingScene ?? latestScene;
+type PreviewPanelPage = "home" | "playground";
+
+export function PreviewPanel({ page }: { page: PreviewPanelPage }) {
+  const home = useContext(HomeContext);
+  const playground = useContext(PlaygroundContext);
+  const [copied, setCopied] = useState(false);
+  const isPlayground = page === "playground";
+
+  let displayScene: VideoDescription | null = null;
+  let phase: Phase = "idle";
+  let resultScene: VideoDescription | null = null;
+  let resultVideo: RenderVideoResponse | null = null;
+
+  if (isPlayground) {
+    if (!playground) {
+      throw new Error("PreviewPanel must be inside PlaygroundProvider");
+    }
+
+    displayScene =
+      playground.pendingScene ?? playground.selected?.scene ?? null;
+    phase = playground.phase;
+    resultScene = playground.selected?.scene ?? null;
+    resultVideo = playground.selected?.video ?? null;
+  } else {
+    if (!home) {
+      throw new Error("PreviewPanel must be inside HomeProvider");
+    }
+
+    displayScene = home.pendingScene ?? home.latestScene;
+    phase = home.phase;
+    resultScene = home.latestScene;
+    resultVideo = home.latestVideo;
+  }
 
   let sceneText = "waiting...";
   if (displayScene) {
@@ -19,25 +53,59 @@ export function PreviewPanel() {
     sceneText = "Generating scene JSON...";
   }
 
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(sceneText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className="w-full overflow-hidden rounded-lg border border-border/70">
+    <div
+      className={cn(
+        "flex min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border/70 bg-background",
+        isPlayground && "h-full"
+      )}
+    >
       <div className="flex items-center border-border/70 border-b">
-        <div className="flex flex-1 items-center border-border/70 border-r px-4 py-2.5">
+        <div className="flex flex-1 items-center justify-between border-border/70 border-r px-4 py-2.5">
           <span className="font-mono text-foreground text-xs">scene json</span>
+          <Button
+            disabled={!displayScene}
+            onClick={handleCopy}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {copied ? (
+              <Check className="size-3" />
+            ) : (
+              <Copy className="size-3" />
+            )}
+          </Button>
         </div>
         <div className="flex flex-1 items-center px-4 py-2.5">
           <span className="font-mono text-foreground text-xs">live render</span>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2">
-        <div className="border-border/70 border-b lg:border-r lg:border-b-0">
-          <pre className="max-h-[50vh] min-h-80 overflow-auto p-4 font-mono text-[11px] text-foreground/70 leading-5">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-2">
+        <div
+          className={cn(
+            "border-border/70 border-b lg:border-r lg:border-b-0",
+            isPlayground && "min-h-0"
+          )}
+        >
+          <pre
+            className={cn(
+              "overflow-auto p-4 font-mono text-[11px] text-foreground/70 leading-5",
+              isPlayground ? "h-full min-h-80" : "max-h-[50vh] min-h-80"
+            )}
+          >
             {sceneText}
           </pre>
         </div>
-        <div className="p-4">
-          <VideoDisplay phase={phase} scene={latestScene} video={latestVideo} />
+        <div className={cn("p-4", isPlayground && "min-h-0 overflow-auto")}>
+          <VideoDisplay phase={phase} scene={resultScene} video={resultVideo} />
         </div>
       </div>
     </div>
