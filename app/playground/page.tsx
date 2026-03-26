@@ -1,6 +1,6 @@
 import { Navbar } from "@/components/navbar";
-import { PreviewPanel } from "../_components/preview-panel";
 import { PlaygroundProvider } from "./_components/context";
+import { PlaygroundPreviewPanels } from "./_components/preview-panels";
 import { PromptInput } from "./_components/prompt-input";
 
 export default function PlaygroundPage() {
@@ -10,8 +10,8 @@ export default function PlaygroundPage() {
       <PlaygroundProvider>
         <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
           <PromptInput />
-          <div className="min-w-0 flex-1 p-4">
-            <PreviewPanel page="playground" />
+          <div className="min-w-0 flex-1">
+            <PlaygroundPreviewPanels />
           </div>
         </div>
       </PlaygroundProvider>
