@@ -38,20 +38,15 @@ export const videoEasingSchema = z.enum([
 
 export const videoImageFitSchema = z.enum(["contain", "cover", "fill"]);
 export const videoTextAlignSchema = z.enum(["center", "left", "right"]);
-export const videoAnchorEdgeSchema = z.enum(["top", "bottom", "left", "right"]);
-export const videoAnchorAlignSchema = z.enum(["start", "center", "end"]);
+export const videoStackDirectionSchema = z.enum(["horizontal", "vertical"]);
+export const videoStackAlignSchema = z.enum(["start", "center", "end"]);
 
 // ---------------------------------------------------------------------------
 // Base node — shared layout + transform properties (no id; dict key = id)
 // ---------------------------------------------------------------------------
 
 const videoNodeBaseSchema = z.object({
-  anchorAlign: videoAnchorAlignSchema.optional(),
-  anchorEdge: videoAnchorEdgeSchema.optional(),
-  anchorTo: z.string().min(1).optional(),
-  gap: nn.optional(),
   opacity: fin.optional(),
-  place: videoAnchorSchema.optional(),
   rotate: fin.optional(),
   scale: fin.optional(),
   scaleX: fin.optional(),
@@ -147,12 +142,47 @@ export const videoParametricGraphNodeSchema = videoNodeBaseSchema
   })
   .strict();
 
+export const videoCenterNodeSchema = videoNodeBaseSchema
+  .extend({
+    children: z.array(z.string().min(1)).length(1),
+    height: pos.optional(),
+    type: z.literal("center"),
+    width: pos.optional(),
+  })
+  .strict();
+
+export const videoAlignNodeSchema = videoNodeBaseSchema
+  .extend({
+    children: z.array(z.string().min(1)).length(1),
+    height: pos.optional(),
+    padding: nn.optional(),
+    position: videoAnchorSchema,
+    type: z.literal("align"),
+    width: pos.optional(),
+  })
+  .strict();
+
+export const videoStackNodeSchema = videoNodeBaseSchema
+  .extend({
+    align: videoStackAlignSchema.optional(),
+    children: z.array(z.string().min(1)).min(1),
+    direction: videoStackDirectionSchema,
+    gap: nn.optional(),
+    height: pos.optional(),
+    type: z.literal("stack"),
+    width: pos.optional(),
+  })
+  .strict();
+
 // ---------------------------------------------------------------------------
 // Node union (single set for both AI output and engine)
 // ---------------------------------------------------------------------------
 
 export const videoNodeSchema = z.discriminatedUnion("type", [
+  videoAlignNodeSchema,
+  videoCenterNodeSchema,
   videoRectNodeSchema,
+  videoStackNodeSchema,
   videoTextNodeSchema,
   videoImageNodeSchema,
   videoMathNodeSchema,

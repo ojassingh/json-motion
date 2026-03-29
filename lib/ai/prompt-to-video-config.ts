@@ -5,12 +5,15 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import {
+  videoAlignNodeSchema,
   videoAnchorSchema,
+  videoCenterNodeSchema,
   videoEasingSchema,
   videoFunctionGraphNodeSchema,
   videoMathNodeSchema,
   videoParametricGraphNodeSchema,
   videoRectNodeSchema,
+  videoStackNodeSchema,
   videoTextNodeSchema,
 } from "@/lib/video/schema";
 
@@ -29,6 +32,16 @@ export const videoCatalog = defineCatalog({
   anchors: videoAnchorSchema,
   easings: videoEasingSchema,
   nodes: {
+    align: {
+      description:
+        "Positions exactly one child at a named frame anchor with optional padding.",
+      propSchema: videoAlignNodeSchema,
+    },
+    center: {
+      description:
+        "Centers exactly one child inside the frame or parent layout box.",
+      propSchema: videoCenterNodeSchema,
+    },
     functionGraph: {
       description:
         'Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use `action: "draw"` in the timeline to animate it drawing progressively.',
@@ -48,6 +61,11 @@ export const videoCatalog = defineCatalog({
         "Rectangle shape with optional fill, stroke, and corner radius.",
       propSchema: videoRectNodeSchema,
     },
+    stack: {
+      description:
+        "Lays out children in a vertical or horizontal sequence with automatic spacing.",
+      propSchema: videoStackNodeSchema,
+    },
     text: {
       description:
         "Renders a text string. Supports multiline with \\n. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
@@ -66,8 +84,8 @@ Create a polished but simple motion graphic from this request:
 "${prompt}"
 
 Pad the timeline: add roughly 1 second of delay before the first animation starts and 1 second of hold after the last animation ends. Space out transitions so they don't all fire immediately one after another — give each beat room to breathe.
-Use \`place: "center"\` for content that should appear visually centered.
-Use \`anchorTo\` to stack elements relative to each other instead of computing coordinates.
+Prefer semantic layout nodes over manual positioning: use \`center\`, \`align\`, and \`stack\`.
+Keep root nodes simple and compose layouts by referencing child IDs in layout nodes.
 Use \`dx\`/\`dy\` in the timeline for relative motion — avoid absolute coordinate math.
 Keep all elements fully inside the canvas.
 If the request implies unsupported media, reinterpret it as a stylized text-and-shape scene.

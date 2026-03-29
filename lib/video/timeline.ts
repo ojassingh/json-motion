@@ -1,9 +1,4 @@
-import type {
-  ResolvedFrame,
-  VideoDescription,
-  VideoScene,
-} from "@/lib/types/video";
-import { DEFAULT_SCENE_BACKGROUND } from "@/lib/video/config";
+import type { VideoDescription, VideoScene } from "@/lib/types/video";
 
 export const getSceneEndFrame = (scene: VideoScene): number =>
   scene.startFrame + scene.duration - 1;
@@ -37,14 +32,3 @@ export const getSceneLocalFrame = (
   scene: VideoScene,
   absoluteFrame: number
 ): number => absoluteFrame - scene.startFrame;
-
-export const createEmptyResolvedFrame = (
-  videoDescription: VideoDescription,
-  absoluteFrame: number
-): ResolvedFrame => ({
-  absoluteFrame,
-  background: videoDescription.background ?? DEFAULT_SCENE_BACKGROUND,
-  localFrame: null,
-  nodes: [],
-  scene: null,
-});
