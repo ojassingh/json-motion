@@ -48,13 +48,18 @@ fn run() -> Result<(), String> {
         .collect::<Result<Vec<_>, _>>()?;
 
     let frames = (0..total).map(|i| {
-        let frame = animation::resolve_frame_fast(&desc, i, &precomputed, font.as_ref())?;
-        render::render_frame(desc.width, desc.height, &frame, font.as_ref())
+        let desc = &desc;
+        let precomputed = &precomputed;
+        let font = &font;
+        move || {
+            let frame = animation::resolve_frame_fast(desc, i, precomputed, font.as_ref())?;
+            render::render_frame(desc.width, desc.height, &frame, font.as_ref())
+        }
     });
 
     eprintln!("rendering and encoding {total} frames...");
 
-    encode::encode(
+    let timings = encode::encode(
         desc.width,
         desc.height,
         desc.fps,
@@ -63,6 +68,11 @@ fn run() -> Result<(), String> {
         frames,
     )?;
 
+    eprintln!(
+        "timings: render={:.2}ms, encode={:.2}ms",
+        timings.render.as_secs_f64() * 1000.0,
+        timings.encode.as_secs_f64() * 1000.0
+    );
     eprintln!("done: {output_path}");
 
     Ok(())

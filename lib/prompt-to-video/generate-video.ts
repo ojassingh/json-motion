@@ -5,20 +5,23 @@ import type {
   PromptToVideoSuccessResponse,
 } from "@/lib/types/prompt-to-video";
 import { promptToVideoRequestSchema } from "@/lib/types/prompt-to-video";
-import type { RenderedVideoResult, VideoDescription } from "@/lib/types/video";
+import type { RenderedVideoResult } from "@/lib/types/video";
 import { renderVideo } from "@/lib/video/render-video";
 
 const toPromptToVideoSuccessResponse = (
-  scene: VideoDescription,
+  generationResult: Awaited<ReturnType<typeof generateSceneJson>>,
   renderResult: RenderedVideoResult
 ): PromptToVideoSuccessResponse => ({
-  scene,
+  rawOutput: generationResult.rawOutput,
+  scene: generationResult.scene,
+  timings: generationResult.timings,
   video: {
     codec: renderResult.codec,
     fps: renderResult.fps,
     frameCount: renderResult.frameCount,
     height: renderResult.height,
     jobId: renderResult.jobId,
+    timings: renderResult.timings,
     url: renderResult.publicUrl,
     width: renderResult.width,
   },
@@ -36,8 +39,8 @@ export const generateVideoFromPrompt = async (
     );
   }
 
-  const scene = await generateSceneJson(parsedRequest.data.prompt);
-  const renderResult = await renderVideo(scene);
+  const generationResult = await generateSceneJson(parsedRequest.data.prompt);
+  const renderResult = await renderVideo(generationResult.scene);
 
-  return toPromptToVideoSuccessResponse(scene, renderResult);
+  return toPromptToVideoSuccessResponse(generationResult, renderResult);
 };

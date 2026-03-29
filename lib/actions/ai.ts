@@ -45,7 +45,13 @@ export const convertAiOutputToVideoDescription = async (
 
 export const generateSceneJson = async (
   prompt: string
-): Promise<VideoDescription> => {
+): Promise<{
+  rawOutput: VideoAiOutput;
+  scene: VideoDescription;
+  timings: {
+    inferenceMs: number;
+  };
+}> => {
   const apiKey = process.env.AI_GATEWAY_API_KEY;
 
   if (!apiKey) {
@@ -56,6 +62,7 @@ export const generateSceneJson = async (
   }
 
   try {
+    const inferenceStart = performance.now();
     const { output } = await generateText({
       model: gateway(PROMPT_TO_VIDEO_MODEL),
       output: Output.object({
@@ -69,6 +76,7 @@ export const generateSceneJson = async (
       },
       system: PROMPT_TO_VIDEO_SYSTEM_PROMPT,
     });
+    const inferenceMs = performance.now() - inferenceStart;
 
     console.log("[ai] raw output:", JSON.stringify(output, null, 2));
 
@@ -80,7 +88,13 @@ export const generateSceneJson = async (
       JSON.stringify(description, null, 2)
     );
 
-    return description;
+    return {
+      rawOutput: parsed,
+      scene: description,
+      timings: {
+        inferenceMs,
+      },
+    };
   } catch (error) {
     throw toAppError(error, "GENERATION_ERROR", {
       message: "AI scene generation failed.",

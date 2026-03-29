@@ -55,6 +55,11 @@ export interface RenderOutputTarget {
   publicUrl: string | null;
 }
 
+export interface VideoTimingMetrics {
+  encodeMs: number;
+  renderMs: number;
+}
+
 export interface RenderVideoOptions {
   codec?: string;
   jobId?: string;
@@ -66,5 +71,6 @@ export interface RenderedVideoResult extends RenderOutputTarget {
   fps: number;
   frameCount: number;
   height: number;
+  timings: VideoTimingMetrics;
   width: number;
 }

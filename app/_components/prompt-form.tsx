@@ -21,7 +21,7 @@ export function PromptForm() {
             Scene prompt
           </label>
           <Input
-            className="h-12 pr-14 font-mono"
+            className="h-12 border-0 pr-14 font-mono ring-1 dark:bg-background dark:ring-white/10"
             disabled={isSubmitting}
             id={promptFieldId}
             maxLength={MAX_PROMPT_LENGTH}
@@ -47,7 +47,7 @@ export function PromptForm() {
         <div className="flex flex-wrap justify-center gap-2">
           {PROMPT_SUGGESTIONS.map((s) => (
             <Button
-              className="rounded-full"
+              className="rounded-full text-muted-foreground dark:bg-background"
               disabled={isSubmitting}
               key={s}
               onClick={() => setPrompt(s)}

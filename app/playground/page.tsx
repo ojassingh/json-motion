@@ -1,20 +1,28 @@
 import { Navbar } from "@/components/navbar";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { PlaygroundProvider } from "./_components/context";
 import { PlaygroundPreviewPanels } from "./_components/preview-panels";
 import { PromptInput } from "./_components/prompt-input";
 
 export default function PlaygroundPage() {
   return (
-    <>
+    <div className="flex h-screen flex-col overflow-hidden">
       <Navbar />
       <PlaygroundProvider>
-        <div className="flex h-[calc(100vh-3rem)] overflow-hidden">
-          <PromptInput />
-          <div className="min-w-0 flex-1">
+        <ResizablePanelGroup className="flex-1">
+          <ResizablePanel defaultSize={25} minSize={18}>
+            <PromptInput />
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={75} minSize={15}>
             <PlaygroundPreviewPanels />
-          </div>
-        </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </PlaygroundProvider>
-    </>
+    </div>
   );
 }

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { AppError, toAppError } from "@/lib/errors";
-import type { VideoDescription } from "@/lib/types/video";
+import type { VideoDescription, VideoTimingMetrics } from "@/lib/types/video";
 import { getDefaultVideoCodec } from "@/lib/video/config";
 
 const ENGINE_PATH = path.join(
@@ -16,12 +16,13 @@ const ENGINE_PATH = path.join(
   "release",
   "engine"
 );
+const TIMINGS_REGEX = /timings:\s+render=([0-9.]+)ms,\s+encode=([0-9.]+)ms/;
 
 export const renderVideoWithRust = async (
   videoDescription: VideoDescription,
   outputFilePath: string,
   codec?: string
-): Promise<void> => {
+): Promise<VideoTimingMetrics> => {
   const jobId = randomUUID();
   const inputPath = path.join(tmpdir(), `scene-${jobId}.json`);
 
@@ -36,9 +37,20 @@ export const renderVideoWithRust = async (
     );
 
     let stderr = "";
+    let timings: VideoTimingMetrics = {
+      encodeMs: 0,
+      renderMs: 0,
+    };
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
+      const timingMatch = chunk.match(TIMINGS_REGEX);
+      if (timingMatch) {
+        timings = {
+          encodeMs: Number(timingMatch[2]),
+          renderMs: Number(timingMatch[1]),
+        };
+      }
       process.stderr.write(`[engine] ${chunk}`);
     });
 
@@ -53,6 +65,8 @@ export const renderVideoWithRust = async (
         message: `Rust engine exited with code ${exitCode}.`,
       });
     }
+
+    return timings;
   } catch (error) {
     throw toAppError(error, "RENDER_ERROR", {
       message: "Rust render engine failed.",

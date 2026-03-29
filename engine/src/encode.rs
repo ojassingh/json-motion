@@ -6,6 +6,12 @@ use ffmpeg::frame;
 use ffmpeg::software::scaling;
 use ffmpeg::util::format::pixel::Pixel;
 use ffmpeg::util::rational::Rational;
+use std::time::{Duration, Instant};
+
+pub struct EncodeTimings {
+    pub encode: Duration,
+    pub render: Duration,
+}
 
 fn choose_pixel_format(codec: ffmpeg::Codec) -> Result<Pixel, String> {
     let video = codec
@@ -89,14 +95,17 @@ fn drain_packets(
     Ok(())
 }
 
-pub fn encode(
+pub fn encode<F>(
     width: u32,
     height: u32,
     fps: f64,
     codec: &str,
     output_path: &str,
-    frames: impl Iterator<Item = Result<Vec<u8>, String>>,
-) -> Result<(), String> {
+    frames: impl Iterator<Item = F>,
+) -> Result<EncodeTimings, String>
+where
+    F: FnOnce() -> Result<Vec<u8>, String>,
+{
     ffmpeg::init().map_err(|error| format!("failed to initialize ffmpeg: {error}"))?;
 
     i32::try_from(width).map_err(|_| format!("invalid width {width}"))?;
@@ -171,8 +180,15 @@ pub fn encode(
     )
     .map_err(|error| format!("failed to create pixel converter: {error}"))?;
 
-    for (index, frame_result) in frames.enumerate() {
-        let frame_data = frame_result?;
+    let mut render_duration = Duration::ZERO;
+    let mut encode_duration = Duration::ZERO;
+
+    for (index, frame_fn) in frames.enumerate() {
+        let render_start = Instant::now();
+        let frame_data = frame_fn()?;
+        render_duration += render_start.elapsed();
+
+        let encode_start = Instant::now();
         let mut rgba = frame::Video::new(Pixel::RGBA, width, height);
         copy_rgba_frame(&mut rgba, &frame_data, width as usize, height as usize)?;
 
@@ -192,8 +208,10 @@ pub fn encode(
             time_base,
             output_time_base,
         )?;
+        encode_duration += encode_start.elapsed();
     }
 
+    let flush_start = Instant::now();
     encoder
         .send_eof()
         .map_err(|error| format!("failed to flush encoder: {error}"))?;
@@ -207,5 +225,11 @@ pub fn encode(
 
     output
         .write_trailer()
-        .map_err(|error| format!("failed to finalize mp4: {error}"))
+        .map_err(|error| format!("failed to finalize mp4: {error}"))?;
+    encode_duration += flush_start.elapsed();
+
+    Ok(EncodeTimings {
+        encode: encode_duration,
+        render: render_duration,
+    })
 }

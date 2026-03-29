@@ -50,10 +50,12 @@ export function SceneJsonContent({
 }
 
 export function VideoDisplay({
+  inferenceMs,
   phase,
   scene,
   video,
 }: {
+  inferenceMs: number | null;
   phase: Phase;
   scene: VideoDescription | null;
   video: RenderVideoResponse | null;
@@ -72,12 +74,8 @@ export function VideoDisplay({
   }
 
   if (!(video && scene)) {
-    return (
-      <div className="flex min-h-72 items-center justify-center text-muted-foreground text-xs">
-        waiting...
-      </div>
-    );
+    return <p className="text-muted-foreground text-xs">waiting...</p>;
   }
 
-  return <VideoResult scene={scene} video={video} />;
+  return <VideoResult inferenceMs={inferenceMs} scene={scene} video={video} />;
 }

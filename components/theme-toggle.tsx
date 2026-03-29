@@ -18,7 +18,7 @@ export function ThemeToggle() {
         <Moon />
       </Button>
       <Button
-        className="hidden dark:block"
+        className="hidden dark:block dark:bg-background"
         onClick={() => setTheme("light")}
         type="button"
         variant="outline"

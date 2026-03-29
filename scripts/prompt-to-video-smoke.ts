@@ -6,12 +6,12 @@ const SAMPLE_PROMPT = "a simple square that fades in and turns round and round";
 const runPromptToVideoSmoke = async (): Promise<void> => {
   console.log(`Prompt: ${SAMPLE_PROMPT}`);
 
-  const scene = await generateSceneJson(SAMPLE_PROMPT);
+  const generationResult = await generateSceneJson(SAMPLE_PROMPT);
 
   console.log("Generated scene:");
-  console.log(JSON.stringify(scene, null, 2));
+  console.log(JSON.stringify(generationResult.scene, null, 2));
 
-  const renderResult = await renderVideo(scene);
+  const renderResult = await renderVideo(generationResult.scene);
 
   console.log(`Rendered video to ${renderResult.filePath}`);
 

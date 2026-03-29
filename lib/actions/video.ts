@@ -13,12 +13,19 @@ function post(url: string, body: unknown): Promise<Response> {
 }
 
 export async function generateScene(prompt: string): Promise<VideoDescription> {
+  const result = await generateSceneWithMetadata(prompt);
+  return result.scene;
+}
+
+export async function generateSceneWithMetadata(
+  prompt: string
+): Promise<PromptToVideoSceneResponse> {
   const res = await post("/api/generate-scene", { prompt });
   const data: PromptToVideoSceneResponse = await res.json();
   if (!res.ok) {
     throw data;
   }
-  return data.scene;
+  return data;
 }
 
 export async function renderVideo(
