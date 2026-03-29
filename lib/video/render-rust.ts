@@ -39,6 +39,7 @@ export const renderVideoWithRust = async (
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
+      process.stderr.write(`[engine] ${chunk}`);
     });
 
     const [exitCode] = (await once(child, "close")) as [number | null];
