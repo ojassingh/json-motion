@@ -3,6 +3,30 @@
 - [x] Identify which stages are CPU-bound, GPU-assisted, or codec/hardware dependent.
 - [x] Explain the post-JSON flow in plain language for a non-graphics audience.
 
+---
+
+## Preview Panel Raw Output + Timing UI
+
+- [x] Inspect the shared preview panel data flow for home and playground.
+- [x] Add raw AI output and timing metadata to the prompt-to-video pipeline responses.
+- [x] Update the preview JSON panel to toggle between scene JSON and raw AI output, with copy support.
+- [x] Replace the first two video metadata cards with inference, render, and encode timings.
+- [x] Run targeted verification and document the result.
+
+### Review
+
+- Added a shared scene/raw-output toggle to the home and playground preview panels, with copy behavior following the active view.
+- Extended the prompt-to-video data flow so the client receives raw AI output plus AI inference timing, and the render response now carries render/encode timings from the Rust engine.
+- Replaced the top metadata cards in the render result UI so the first visible stats are now `Inference`, `Render`, and `Encode` instead of `Job` and `Codec`.
+
+### Verification
+
+- `bun test app/api/render/route.test.ts`
+- `bun x tsc --noEmit`
+- `bun x ultracite check`
+- `cargo test` in `engine/`
+- `cargo build --release` in `engine/`
+
 ## Review
 
 - Verified the request flow by reading `app/api/generate-scene/route.ts`, `lib/actions/ai.ts`, `app/api/render/route.ts`, `lib/video/render-video.ts`, `lib/video/renderer.ts`, `lib/video/pre-render.ts`, and `lib/video/encoder.ts`.
