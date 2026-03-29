@@ -34,25 +34,25 @@ export function useVideoGeneration({
       onStart?.();
       setPhase("planning");
       setPendingScene(null);
-      const scene = await generateScene(arg);
-      setPendingScene(scene);
-      setPhase("rendering");
-      const video = await renderVideo(scene);
-      return { prompt: arg, scene, video };
-    },
-    {
-      throwOnError: false,
-      onSuccess: (generation) => {
-        setPhase("idle");
-        setPendingScene(null);
-        onSuccess(generation);
-      },
-      onError: (error) => {
-        setPhase("idle");
-        setPendingScene(null);
+      let result: GeneratedVideo | undefined;
+      try {
+        const scene = await generateScene(arg);
+        setPendingScene(scene);
+        setPhase("rendering");
+        const video = await renderVideo(scene);
+        result = { prompt: arg, scene, video };
+      } catch (error) {
         handleError(error);
-      },
-    }
+      } finally {
+        setPhase("idle");
+        setPendingScene(null);
+      }
+      if (result) {
+        onSuccess(result);
+      }
+      return result;
+    },
+    { throwOnError: false }
   );
 
   const generate = async (prompt: string): Promise<void> => {

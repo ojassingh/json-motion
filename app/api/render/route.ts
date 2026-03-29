@@ -33,6 +33,15 @@ export async function POST(request: Request): Promise<Response> {
             message: "The render request failed unexpectedly.",
           });
 
+    if (appError.status >= 500) {
+      console.error("POST /api/render failed", {
+        code: appError.code,
+        details: appError.details,
+        message: appError.message,
+        status: appError.status,
+      });
+    }
+
     return NextResponse.json(toAppErrorResponse(appError), {
       status: appError.status,
     });

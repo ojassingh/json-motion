@@ -26,7 +26,7 @@ export function PromptForm() {
             id={promptFieldId}
             maxLength={MAX_PROMPT_LENGTH}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the motion you want to generate..."
+            placeholder="Describe a simple text-and-shape motion scene..."
             value={prompt}
           />
           <Button
