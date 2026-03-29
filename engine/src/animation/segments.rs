@@ -1,6 +1,5 @@
 use crate::color;
-use crate::shared::consts::{DEFAULT_FONT_SIZE, DEFAULT_TEXT_COLOR};
-use crate::schema::{Easing, Node, TimelineEvent};
+use crate::schema::{Easing, TimelineEvent};
 
 use super::easing::ease;
 
@@ -114,56 +113,4 @@ fn resolve_color(segs: &[ColorSeg], base: Option<&str>, t: f64) -> Option<String
         return Some(color::lerp_oklch(&s.from, &s.to, ease(raw, s.easing)));
     }
     val
-}
-
-pub(super) fn num_base(node: &Node, prop: &str) -> f64 {
-    let base = node.base();
-    let uniform = base.scale.unwrap_or(1.0);
-    match prop {
-        "opacity" => base.opacity.unwrap_or(1.0),
-        "rotation" => base.rotate.unwrap_or(0.0),
-        "scaleX" => base.scale_x.unwrap_or(uniform),
-        "scaleY" => base.scale_y.unwrap_or(uniform),
-        "skewX" => base.skew_x.unwrap_or(0.0),
-        "skewY" => base.skew_y.unwrap_or(0.0),
-        "width" => match node {
-            Node::Rect(n) => n.width,
-            _ => 0.0,
-        },
-        "height" => match node {
-            Node::Rect(n) => n.height,
-            _ => 0.0,
-        },
-        "cornerRadius" => match node {
-            Node::Rect(n) => n.corner_radius.unwrap_or(0.0),
-            _ => 0.0,
-        },
-        "strokeWidth" => match node {
-            Node::Rect(n) => n.stroke_width.unwrap_or(0.0),
-            _ => 0.0,
-        },
-        "fontSize" => match node {
-            Node::Text(n) => n.size.unwrap_or(DEFAULT_FONT_SIZE),
-            _ => 0.0,
-        },
-        _ => 0.0,
-    }
-}
-
-pub(super) fn color_base<'a>(node: &'a Node, prop: &str) -> Option<&'a str> {
-    match prop {
-        "fill" => match node {
-            Node::Rect(n) => n.fill.as_deref(),
-            _ => None,
-        },
-        "stroke" => match node {
-            Node::Rect(n) => n.stroke.as_deref(),
-            _ => None,
-        },
-        "color" => match node {
-            Node::Text(n) => Some(n.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
-            _ => None,
-        },
-        _ => None,
-    }
 }

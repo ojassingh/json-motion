@@ -95,7 +95,7 @@ pub fn encode(
     fps: f64,
     codec: &str,
     output_path: &str,
-    frames: impl Iterator<Item = Vec<u8>>,
+    frames: impl Iterator<Item = Result<Vec<u8>, String>>,
 ) -> Result<(), String> {
     ffmpeg::init().map_err(|error| format!("failed to initialize ffmpeg: {error}"))?;
 
@@ -171,7 +171,8 @@ pub fn encode(
     )
     .map_err(|error| format!("failed to create pixel converter: {error}"))?;
 
-    for (index, frame_data) in frames.enumerate() {
+    for (index, frame_result) in frames.enumerate() {
+        let frame_data = frame_result?;
         let mut rgba = frame::Video::new(Pixel::RGBA, width, height);
         copy_rgba_frame(&mut rgba, &frame_data, width as usize, height as usize)?;
 

@@ -17,10 +17,6 @@ pub fn parse_hex(hex: &str) -> (u8, u8, u8) {
     )
 }
 
-fn clamp01(v: f64) -> f64 {
-    v.clamp(0.0, 1.0)
-}
-
 fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.04045 {
         c / 12.92
@@ -45,9 +41,9 @@ fn hex_to_rgb(hex: &str) -> (f64, f64, f64) {
 fn rgb_to_hex(r: f64, g: f64, b: f64) -> String {
     format!(
         "#{:02x}{:02x}{:02x}",
-        (clamp01(r) * 255.0).round() as u8,
-        (clamp01(g) * 255.0).round() as u8,
-        (clamp01(b) * 255.0).round() as u8,
+        (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (b.clamp(0.0, 1.0) * 255.0).round() as u8,
     )
 }
 
