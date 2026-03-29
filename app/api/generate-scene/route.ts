@@ -30,9 +30,9 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const scene = await generateSceneJson(parsedRequest.data.prompt);
+    const result = await generateSceneJson(parsedRequest.data.prompt);
 
-    return NextResponse.json({ scene });
+    return NextResponse.json(result);
   } catch (error) {
     const appError =
       error instanceof SyntaxError

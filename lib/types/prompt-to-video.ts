@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import type { AppErrorResponse } from "@/lib/errors";
-import type { VideoDescription } from "@/lib/types/video";
+import type {
+  VideoAiOutput,
+  VideoDescription,
+  VideoTimingMetrics,
+} from "@/lib/types/video";
 
 export const MAX_PROMPT_LENGTH = 600;
 
@@ -19,7 +23,11 @@ export const promptToVideoRequestSchema = z.object({
 export type PromptToVideoRequest = z.infer<typeof promptToVideoRequestSchema>;
 
 export interface PromptToVideoSceneResponse {
+  rawOutput: VideoAiOutput;
   scene: VideoDescription;
+  timings: {
+    inferenceMs: number;
+  };
 }
 
 export interface PromptToVideoRenderMetadata {
@@ -28,12 +36,17 @@ export interface PromptToVideoRenderMetadata {
   frameCount: number;
   height: number;
   jobId: string;
+  timings: VideoTimingMetrics;
   url: string | null;
   width: number;
 }
 
 export interface PromptToVideoSuccessResponse {
+  rawOutput: VideoAiOutput;
   scene: VideoDescription;
+  timings: {
+    inferenceMs: number;
+  };
   video: PromptToVideoRenderMetadata;
 }
 
@@ -43,6 +56,7 @@ export interface RenderVideoResponse {
   fps: number;
   frameCount: number;
   jobId: string;
+  timings: VideoTimingMetrics;
   url: string | null;
 }
 
