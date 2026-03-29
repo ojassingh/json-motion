@@ -1,5 +1,12 @@
 import { CircleHelp } from "lucide-react";
 import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -15,23 +22,21 @@ interface MetaCardProps {
 
 function MetaCard({ label, value, tooltip }: MetaCardProps) {
   return (
-    <div className="flex flex-col gap-1 rounded-md bg-background px-3 py-2.5 ring-1 ring-foreground/10">
-      <div className="flex items-center gap-1">
-        <span className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
-          {label}
-        </span>
-        <Tooltip>
-          <TooltipTrigger className="text-muted-foreground/50 transition-colors hover:text-muted-foreground">
-            <CircleHelp className="size-2.5" />
-            <span className="sr-only">About {label}</span>
-          </TooltipTrigger>
-          <TooltipContent>{tooltip}</TooltipContent>
-        </Tooltip>
-      </div>
-      <span className="truncate font-mono text-foreground text-xs">
-        {value}
-      </span>
-    </div>
+    <Card className="rounded-sm dark:bg-background" size="sm">
+      <CardHeader>
+        <CardTitle className="text-muted-foreground">{label}</CardTitle>
+        <CardAction>
+          <Tooltip>
+            <TooltipTrigger>
+              <CircleHelp className="size-3 text-muted-foreground" />
+              <span className="sr-only">About {label}</span>
+            </TooltipTrigger>
+            <TooltipContent>{tooltip}</TooltipContent>
+          </Tooltip>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="text-sm">{value}</CardContent>
+    </Card>
   );
 }
 
