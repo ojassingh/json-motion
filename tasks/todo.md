@@ -112,3 +112,11 @@
 - `bun x tsc --noEmit`
 - `cargo test` in `engine/`
 - `cargo clippy --all-targets --locked -- -D warnings` in `engine/`
+
+---
+
+## Home Preview Panel Height
+
+- [x] Remove the left-column fixed-height workaround from the home preview panel.
+- [x] Give the home preview panel itself a bounded height so both columns stretch to the same row height.
+- [x] Reuse the same inner sizing pattern as the playground preview panel and verify linting.

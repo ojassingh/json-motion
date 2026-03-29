@@ -34,7 +34,7 @@ export function PreviewPanel() {
   };
 
   return (
-    <div className="flex min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border/70 bg-background">
+    <div className="flex h-128 min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border/70 bg-background">
       <div className="flex border-border/70 border-b">
         <div className="flex h-9 flex-1 items-center justify-between border-border/70 border-r px-4">
           <div className="flex items-center gap-1">
@@ -69,13 +69,13 @@ export function PreviewPanel() {
       </div>
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-2">
-        <div className="border-border/70 border-b lg:border-r lg:border-b-0">
+        <div className="flex min-h-0 flex-col border-border/70 border-b lg:border-r lg:border-b-0">
           <SceneJsonContent
-            className="max-h-[50vh] min-h-80 p-4"
+            className="min-h-0 flex-1 p-4"
             sceneText={currentText}
           />
         </div>
-        <div className="p-4">
+        <div className="min-h-0 overflow-auto p-4">
           <VideoDisplay
             inferenceMs={inferenceMs}
             phase={phase}

@@ -21,7 +21,7 @@ export function PromptForm() {
             Scene prompt
           </label>
           <Input
-            className="h-12 border-0 pr-14 font-mono ring-1 dark:bg-background dark:ring-white/10"
+            className="h-12 border-0 pr-14 font-mono ring-1 ring-black/10 dark:bg-background dark:ring-white/10"
             disabled={isSubmitting}
             id={promptFieldId}
             maxLength={MAX_PROMPT_LENGTH}

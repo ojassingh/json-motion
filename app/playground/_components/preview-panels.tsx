@@ -70,7 +70,7 @@ export function PlaygroundPreviewPanels() {
             />
           </div>
           <SceneJsonContent
-            className="min-h-0 flex-1 p-4"
+            className="h-full min-h-0 flex-1 p-4"
             sceneText={currentText}
           />
         </section>

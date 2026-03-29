@@ -40,7 +40,7 @@ export function SceneJsonContent({
   return (
     <pre
       className={cn(
-        "overflow-auto font-mono text-[11px] text-foreground/70 leading-5",
+        "m-0 overflow-auto font-mono text-foreground/70 text-xs leading-5",
         className
       )}
     >

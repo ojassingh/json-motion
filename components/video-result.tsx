@@ -22,9 +22,11 @@ interface MetaCardProps {
 
 function MetaCard({ label, value, tooltip }: MetaCardProps) {
   return (
-    <Card className="rounded-sm dark:bg-background" size="sm">
+    <Card className="gap-0 rounded-sm dark:gap-0 dark:bg-background" size="sm">
       <CardHeader>
-        <CardTitle className="text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="font-mono text-muted-foreground text-xs uppercase">
+          {label}
+        </CardTitle>
         <CardAction>
           <Tooltip>
             <TooltipTrigger>
@@ -91,44 +93,37 @@ export function VideoResult({ inferenceMs, scene, video }: VideoResultProps) {
         </div>
       )}
 
-      <dl className="flex flex-col gap-2">
-        {/* Timing row */}
-        <div className="grid grid-cols-4 gap-2">
-          <MetaCard
-            label="Total"
-            tooltip="End-to-end time from inference through encode."
-            value={formatTiming(total)}
-          />
-          <MetaCard
-            label="Inference"
-            tooltip="Time spent generating the scene JSON from your prompt."
-            value={formatTiming(inferenceMs)}
-          />
-          <MetaCard
-            label="Render"
-            tooltip="Time spent drawing each frame of the animation."
-            value={formatTiming(video.timings.renderMs)}
-          />
-          <MetaCard
-            label="Encode"
-            tooltip="Time spent compressing frames into the final video file."
-            value={formatTiming(video.timings.encodeMs)}
-          />
-        </div>
-
-        {/* Frames + Size row */}
-        <div className="grid grid-cols-2 gap-2">
-          <MetaCard
-            label="Frames"
-            tooltip="Total number of frames rendered and the playback frame rate."
-            value={`${video.frameCount} at ${video.fps} fps`}
-          />
-          <MetaCard
-            label="Size"
-            tooltip="Output resolution of the video in pixels."
-            value={`${scene.width} × ${scene.height}`}
-          />
-        </div>
+      <dl className="grid grid-cols-3 gap-2">
+        <MetaCard
+          label="Total time"
+          tooltip="End-to-end time from inference through encode."
+          value={formatTiming(total)}
+        />
+        <MetaCard
+          label="Frames"
+          tooltip="Total number of frames rendered and the playback frame rate."
+          value={`${video.frameCount} at ${video.fps} fps`}
+        />
+        <MetaCard
+          label="Size"
+          tooltip="Output resolution of the video in pixels."
+          value={`${scene.width} × ${scene.height}`}
+        />
+        <MetaCard
+          label="Inference time"
+          tooltip="Time spent generating the scene JSON from your prompt."
+          value={formatTiming(inferenceMs)}
+        />
+        <MetaCard
+          label="Render time"
+          tooltip="Time spent drawing each frame of the animation."
+          value={formatTiming(video.timings.renderMs)}
+        />
+        <MetaCard
+          label="Encode time"
+          tooltip="Time spent compressing frames into the final video file."
+          value={formatTiming(video.timings.encodeMs)}
+        />
       </dl>
     </div>
   );
