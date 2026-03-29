@@ -15,8 +15,8 @@ export function PromptInput() {
 
   return (
     <aside className="flex w-96 shrink-0 flex-col border-r">
-      <div className="border-b px-3 py-2.5">
-        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">
+      <div className="flex h-9 items-center border-b px-3">
+        <span className="font-mono text-muted-foreground text-xs">
           prompt input
         </span>
       </div>
