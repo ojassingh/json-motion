@@ -5,13 +5,11 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import {
+  videoAiIconNodeSchema,
   videoAlignNodeSchema,
   videoAnchorSchema,
   videoCenterNodeSchema,
   videoEasingSchema,
-  videoFunctionGraphNodeSchema,
-  videoMathNodeSchema,
-  videoParametricGraphNodeSchema,
   videoRectNodeSchema,
   videoStackNodeSchema,
   videoTextNodeSchema,
@@ -23,10 +21,7 @@ const DEFAULT_VIDEO_DIMENSIONS = {
   width: DEFAULT_CANVAS_WIDTH,
 } as const;
 
-export const PROMPT_TO_VIDEO_MODEL =
-  process.env.AI_GATEWAY_MODEL ??
-  process.env.OPENAI_VIDEO_MODEL ??
-  "openai/gpt-5.4";
+export const PROMPT_TO_VIDEO_MODEL = "openai/gpt-5.4";
 
 export const videoCatalog = defineCatalog({
   anchors: videoAnchorSchema,
@@ -42,19 +37,10 @@ export const videoCatalog = defineCatalog({
         "Centers exactly one child inside the frame or parent layout box.",
       propSchema: videoCenterNodeSchema,
     },
-    functionGraph: {
+    icon: {
       description:
-        'Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use `action: "draw"` in the timeline to animate it drawing progressively.',
-      propSchema: videoFunctionGraphNodeSchema,
-    },
-    math: {
-      description: "Renders a LaTeX equation. Use for mathematical notation.",
-      propSchema: videoMathNodeSchema,
-    },
-    parametricGraph: {
-      description:
-        'Renders a parametric curve where x and y are functions of t. Expressions use mathjs syntax. Use `action: "draw"` in the timeline to animate.',
-      propSchema: videoParametricGraphNodeSchema,
+        "Renders a Lucide icon by name (see lucide.dev/icons). Use for symbolic visual accents. Specify `stroke` to colour the icon lines; omit `fill` unless you want a solid fill instead of an outline icon.",
+      propSchema: videoAiIconNodeSchema,
     },
     rect: {
       description:

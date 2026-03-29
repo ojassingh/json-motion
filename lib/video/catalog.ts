@@ -75,6 +75,10 @@ const SKIPPED_PROPS = new Set([
   "x",
   "y",
   "zIndex",
+  "absoluteStrokeWidth",
+  "elements",
+  "viewportHeight",
+  "viewportWidth",
 ]);
 
 const generateNodeSection = (name: string, entry: NodeEntry): string => {
