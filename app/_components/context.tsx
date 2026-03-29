@@ -3,13 +3,16 @@
 import { createContext, useContext, useState } from "react";
 import { useVideoGeneration } from "@/lib/hooks/use-video-generation";
 import type { RenderVideoResponse } from "@/lib/types/prompt-to-video";
-import type { VideoDescription } from "@/lib/types/video";
+import type { VideoAiOutput, VideoDescription } from "@/lib/types/video";
 import type { Phase } from "@/lib/types/video-generation";
 
 export interface HomeContextValue {
+  latestInferenceMs: number | null;
+  latestRawOutput: VideoAiOutput | null;
   latestScene: VideoDescription | null;
   latestVideo: RenderVideoResponse | null;
   onSubmit: (e: React.FormEvent) => Promise<void>;
+  pendingRawOutput: VideoAiOutput | null;
   pendingScene: VideoDescription | null;
   phase: Phase;
   prompt: string;
@@ -28,21 +31,32 @@ export function useHome(): HomeContextValue {
 
 export function HomeProvider({ children }: { children: React.ReactNode }) {
   const [prompt, setPrompt] = useState("");
+  const [latestRawOutput, setLatestRawOutput] = useState<VideoAiOutput | null>(
+    null
+  );
+  const [latestInferenceMs, setLatestInferenceMs] = useState<number | null>(
+    null
+  );
   const [latestScene, setLatestScene] = useState<VideoDescription | null>(null);
   const [latestVideo, setLatestVideo] = useState<RenderVideoResponse | null>(
     null
   );
-  const { generate, pendingScene, phase } = useVideoGeneration({
-    mutationKey: "video/pipeline/home",
-    onStart: () => {
-      setLatestScene(null);
-      setLatestVideo(null);
-    },
-    onSuccess: ({ scene, video }) => {
-      setLatestScene(scene);
-      setLatestVideo(video);
-    },
-  });
+  const { generate, pendingRawOutput, pendingScene, phase } =
+    useVideoGeneration({
+      mutationKey: "video/pipeline/home",
+      onStart: () => {
+        setLatestInferenceMs(null);
+        setLatestRawOutput(null);
+        setLatestScene(null);
+        setLatestVideo(null);
+      },
+      onSuccess: ({ rawOutput, scene, timings, video }) => {
+        setLatestInferenceMs(timings.inferenceMs);
+        setLatestRawOutput(rawOutput);
+        setLatestScene(scene);
+        setLatestVideo(video);
+      },
+    });
 
   const onSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -59,6 +73,9 @@ export function HomeProvider({ children }: { children: React.ReactNode }) {
         prompt,
         setPrompt,
         phase,
+        latestInferenceMs,
+        latestRawOutput,
+        pendingRawOutput,
         pendingScene,
         latestScene,
         latestVideo,
