@@ -13,19 +13,26 @@ import {
   DEFAULT_CANVAS_HEIGHT,
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
+import { resolveAiSceneNodes } from "@/lib/video/lucide";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 
-export const convertAiOutputToVideoDescription = (
+export const convertAiOutputToVideoDescription = async (
   aiOutput: VideoAiOutput
-): VideoDescription => {
+): Promise<VideoDescription> => {
   let startFrame = 0;
 
-  const scenes = aiOutput.scenes.map((scene) => {
-    const duration = Math.round(scene.duration * DEFAULT_CANVAS_FPS);
-    const converted = { ...scene, duration, startFrame };
-    startFrame += duration;
-    return converted;
-  });
+  const scenes = await Promise.all(
+    aiOutput.scenes.map(async (scene) => {
+      const duration = Math.max(
+        1,
+        Math.round(scene.duration * DEFAULT_CANVAS_FPS)
+      );
+      const nodes = await resolveAiSceneNodes(scene.nodes);
+      const converted = { ...scene, duration, nodes, startFrame };
+      startFrame += duration;
+      return converted;
+    })
+  );
 
   return videoDescriptionSchema.parse({
     ...aiOutput,
@@ -63,9 +70,17 @@ export const generateSceneJson = async (
       system: PROMPT_TO_VIDEO_SYSTEM_PROMPT,
     });
 
-    return convertAiOutputToVideoDescription(
-      videoCatalog.getSchema().parse(output)
+    console.log("[ai] raw output:", JSON.stringify(output, null, 2));
+
+    const parsed = videoCatalog.getSchema().parse(output);
+    const description = await convertAiOutputToVideoDescription(parsed);
+
+    console.log(
+      "[ai] video description:",
+      JSON.stringify(description, null, 2)
     );
+
+    return description;
   } catch (error) {
     throw toAppError(error, "GENERATION_ERROR", {
       message: "AI scene generation failed.",
