@@ -36,7 +36,8 @@ export const videoEasingSchema = z.enum([
   "spring",
 ]);
 
-export const videoImageFitSchema = z.enum(["contain", "cover", "fill"]);
+export const videoIconLineCapSchema = z.enum(["butt", "round", "square"]);
+export const videoIconLineJoinSchema = z.enum(["bevel", "miter", "round"]);
 export const videoTextAlignSchema = z.enum(["center", "left", "right"]);
 export const videoStackDirectionSchema = z.enum(["horizontal", "vertical"]);
 export const videoStackAlignSchema = z.enum(["start", "center", "end"]);
@@ -88,56 +89,99 @@ export const videoTextNodeSchema = videoNodeBaseSchema
   })
   .strict();
 
-const videoImageNodeSchema = videoNodeBaseSchema
-  .extend({
-    fit: videoImageFitSchema.optional(),
+const videoIconPointSchema = z.tuple([fin, fin]);
+
+export const videoIconPathPrimitiveSchema = z
+  .object({
+    d: z.string().trim().min(1),
+    type: z.literal("path"),
+  })
+  .strict();
+
+export const videoIconCirclePrimitiveSchema = z
+  .object({
+    cx: fin,
+    cy: fin,
+    r: pos,
+    type: z.literal("circle"),
+  })
+  .strict();
+
+export const videoIconLinePrimitiveSchema = z
+  .object({
+    type: z.literal("line"),
+    x1: fin,
+    x2: fin,
+    y1: fin,
+    y2: fin,
+  })
+  .strict();
+
+export const videoIconPolylinePrimitiveSchema = z
+  .object({
+    points: z.array(videoIconPointSchema).min(2),
+    type: z.literal("polyline"),
+  })
+  .strict();
+
+export const videoIconPolygonPrimitiveSchema = z
+  .object({
+    points: z.array(videoIconPointSchema).min(3),
+    type: z.literal("polygon"),
+  })
+  .strict();
+
+export const videoIconRectPrimitiveSchema = z
+  .object({
     height: pos,
-    src: z.string().trim().min(1),
-    type: z.literal("image"),
+    rx: nn.optional(),
+    ry: nn.optional(),
+    type: z.literal("rect"),
+    width: pos,
+    x: fin.optional(),
+    y: fin.optional(),
+  })
+  .strict();
+
+export const videoIconPrimitiveSchema = z.discriminatedUnion("type", [
+  videoIconPathPrimitiveSchema,
+  videoIconCirclePrimitiveSchema,
+  videoIconLinePrimitiveSchema,
+  videoIconPolylinePrimitiveSchema,
+  videoIconPolygonPrimitiveSchema,
+  videoIconRectPrimitiveSchema,
+]);
+
+// Full engine-facing schema: requires resolved SVG elements.
+export const videoIconNodeSchema = videoNodeBaseSchema
+  .extend({
+    absoluteStrokeWidth: z.boolean().optional(),
+    elements: z.array(videoIconPrimitiveSchema).min(1),
+    fill: videoHexColorSchema.optional(),
+    height: pos,
+    lineCap: videoIconLineCapSchema.optional(),
+    lineJoin: videoIconLineJoinSchema.optional(),
+    stroke: videoHexColorSchema.optional(),
+    strokeWidth: nn.optional(),
+    type: z.literal("icon"),
+    viewportHeight: pos.optional(),
+    viewportWidth: pos.optional(),
     width: pos,
   })
   .strict();
 
-export const videoMathNodeSchema = videoNodeBaseSchema
+// AI-output schema: references icons by Lucide name; the server resolves
+// names to elements before passing the description to the Rust engine.
+export const videoAiIconNodeSchema = videoNodeBaseSchema
   .extend({
-    color: videoHexColorSchema.optional(),
-    fontSize: pos,
-    height: pos.optional(),
-    latex: z.string().trim().min(1),
-    type: z.literal("math"),
-    width: pos.optional(),
-  })
-  .strict();
-
-const rangeSchema = z.array(fin).length(2);
-
-export const videoFunctionGraphNodeSchema = videoNodeBaseSchema
-  .extend({
-    color: videoHexColorSchema.optional(),
-    drawProgress: z.number().min(0).max(1).optional(),
-    fn: z.string().trim().min(1),
+    fill: videoHexColorSchema.optional(),
     height: pos,
-    showAxes: z.boolean().optional(),
-    showGrid: z.boolean().optional(),
-    strokeWidth: pos.optional(),
-    type: z.literal("functionGraph"),
-    width: pos,
-    xRange: rangeSchema,
-    yRange: rangeSchema,
-  })
-  .strict();
-
-export const videoParametricGraphNodeSchema = videoNodeBaseSchema
-  .extend({
-    color: videoHexColorSchema.optional(),
-    drawProgress: z.number().min(0).max(1).optional(),
-    fnX: z.string().trim().min(1),
-    fnY: z.string().trim().min(1),
-    height: pos,
-    samples: z.number().int().positive().optional(),
-    strokeWidth: pos.optional(),
-    tRange: rangeSchema,
-    type: z.literal("parametricGraph"),
+    lineCap: videoIconLineCapSchema.optional(),
+    lineJoin: videoIconLineJoinSchema.optional(),
+    name: z.string().trim().min(1),
+    stroke: videoHexColorSchema.optional(),
+    strokeWidth: nn.optional(),
+    type: z.literal("icon"),
     width: pos,
   })
   .strict();
@@ -175,19 +219,29 @@ export const videoStackNodeSchema = videoNodeBaseSchema
   .strict();
 
 // ---------------------------------------------------------------------------
-// Node union (single set for both AI output and engine)
+// Node unions
 // ---------------------------------------------------------------------------
 
+// Engine node union: all types with fully-resolved payloads.
 export const videoNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
   videoCenterNodeSchema,
+  videoIconNodeSchema,
   videoRectNodeSchema,
   videoStackNodeSchema,
   videoTextNodeSchema,
-  videoImageNodeSchema,
-  videoMathNodeSchema,
-  videoFunctionGraphNodeSchema,
-  videoParametricGraphNodeSchema,
+]);
+
+// AI output node union: identical to the engine union except icon nodes carry
+// a Lucide name instead of raw elements. The server resolves names before
+// serialising to Rust.
+export const videoAiNodeSchema = z.discriminatedUnion("type", [
+  videoAlignNodeSchema,
+  videoCenterNodeSchema,
+  videoAiIconNodeSchema,
+  videoRectNodeSchema,
+  videoStackNodeSchema,
+  videoTextNodeSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -233,7 +287,7 @@ export const videoAiSceneSchema = z
     background: videoHexColorSchema.optional(),
     duration: pos,
     id: z.string().trim().min(1),
-    nodes: z.record(z.string(), videoNodeSchema),
+    nodes: z.record(z.string(), videoAiNodeSchema),
     timeline: z.array(videoTimelineEventSchema).optional(),
   })
   .strict();

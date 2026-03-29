@@ -1,6 +1,8 @@
 import type { z } from "zod";
 
 import type {
+  videoAiIconNodeSchema,
+  videoAiNodeSchema,
   videoAiOutputSchema,
   videoAiSceneSchema,
   videoAlignNodeSchema,
@@ -9,7 +11,10 @@ import type {
   videoDescriptionSchema,
   videoEasingSchema,
   videoHexColorSchema,
-  videoImageFitSchema,
+  videoIconLineCapSchema,
+  videoIconLineJoinSchema,
+  videoIconNodeSchema,
+  videoIconPrimitiveSchema,
   videoNodeSchema,
   videoSceneSchema,
   videoStackAlignSchema,
@@ -25,7 +30,12 @@ export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
 export type VideoColor = z.infer<typeof videoHexColorSchema>;
 export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;
-export type VideoImageFit = z.infer<typeof videoImageFitSchema>;
+export type VideoAiIconNode = z.infer<typeof videoAiIconNodeSchema>;
+export type VideoAiNode = z.infer<typeof videoAiNodeSchema>;
+export type VideoIconLineCap = z.infer<typeof videoIconLineCapSchema>;
+export type VideoIconLineJoin = z.infer<typeof videoIconLineJoinSchema>;
+export type VideoIconNode = z.infer<typeof videoIconNodeSchema>;
+export type VideoIconPrimitive = z.infer<typeof videoIconPrimitiveSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
 export type VideoScene = z.infer<typeof videoSceneSchema>;
 export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;
@@ -35,16 +45,6 @@ export type VideoTimelineEvent = z.infer<typeof videoTimelineEventSchema>;
 
 export type VideoAlignNode = z.infer<typeof videoAlignNodeSchema>;
 export type VideoCenterNode = z.infer<typeof videoCenterNodeSchema>;
-export type VideoFunctionGraphNode = Extract<
-  VideoNode,
-  { type: "functionGraph" }
->;
-export type VideoImageNode = Extract<VideoNode, { type: "image" }>;
-export type VideoMathNode = Extract<VideoNode, { type: "math" }>;
-export type VideoParametricGraphNode = Extract<
-  VideoNode,
-  { type: "parametricGraph" }
->;
 export type VideoRectNode = Extract<VideoNode, { type: "rect" }>;
 export type VideoStackNode = z.infer<typeof videoStackNodeSchema>;
 export type VideoTextNode = Extract<VideoNode, { type: "text" }>;
