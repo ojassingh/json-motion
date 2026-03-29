@@ -86,4 +86,27 @@ describe("lucide video icons", () => {
     expect(icon.elements.length).toBeGreaterThan(0);
     expect(icon.elements[0]).toHaveProperty("type", "path");
   });
+
+  test("resolveAiSceneNodes converts display latex text nodes into icon nodes", async () => {
+    const resolved = await resolveAiSceneNodes({
+      equation: {
+        text: "$$x^2 + y^2 = z^2$$",
+        type: "text",
+      },
+    });
+
+    expect(videoNodeSchema.parse(resolved.equation)).toEqual(resolved.equation);
+
+    const equation = resolved.equation;
+    if (equation.type !== "icon") {
+      throw new Error("expected icon type");
+    }
+
+    expect(equation.fill).toBe("#f8fafc");
+    expect(equation.strokeWidth).toBe(0);
+    expect(equation.elements.length).toBeGreaterThan(0);
+    expect(equation.elements[0]).toHaveProperty("type", "path");
+    expect(equation.width).toBeGreaterThan(0);
+    expect(equation.height).toBeGreaterThan(0);
+  });
 });
