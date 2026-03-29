@@ -5,12 +5,13 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import {
+  videoAiIconNodeSchema,
+  videoAlignNodeSchema,
   videoAnchorSchema,
+  videoCenterNodeSchema,
   videoEasingSchema,
-  videoFunctionGraphNodeSchema,
-  videoMathNodeSchema,
-  videoParametricGraphNodeSchema,
   videoRectNodeSchema,
+  videoStackNodeSchema,
   videoTextNodeSchema,
 } from "@/lib/video/schema";
 
@@ -20,33 +21,36 @@ const DEFAULT_VIDEO_DIMENSIONS = {
   width: DEFAULT_CANVAS_WIDTH,
 } as const;
 
-export const PROMPT_TO_VIDEO_MODEL =
-  process.env.AI_GATEWAY_MODEL ??
-  process.env.OPENAI_VIDEO_MODEL ??
-  "openai/gpt-5.4";
+export const PROMPT_TO_VIDEO_MODEL = "openai/gpt-5.4";
 
 export const videoCatalog = defineCatalog({
   anchors: videoAnchorSchema,
   easings: videoEasingSchema,
   nodes: {
-    functionGraph: {
+    align: {
       description:
-        'Renders a y = f(x) curve. Expressions use mathjs syntax (sin, cos, sqrt, pow, log, etc.). Use `action: "draw"` in the timeline to animate it drawing progressively.',
-      propSchema: videoFunctionGraphNodeSchema,
+        "Positions exactly one child at a named frame anchor with optional padding.",
+      propSchema: videoAlignNodeSchema,
     },
-    math: {
-      description: "Renders a LaTeX equation. Use for mathematical notation.",
-      propSchema: videoMathNodeSchema,
-    },
-    parametricGraph: {
+    center: {
       description:
-        'Renders a parametric curve where x and y are functions of t. Expressions use mathjs syntax. Use `action: "draw"` in the timeline to animate.',
-      propSchema: videoParametricGraphNodeSchema,
+        "Centers exactly one child inside the frame or parent layout box.",
+      propSchema: videoCenterNodeSchema,
+    },
+    icon: {
+      description:
+        "Renders a Lucide icon by name (see lucide.dev/icons). Use for symbolic visual accents. Specify `stroke` to colour the icon lines; omit `fill` unless you want a solid fill instead of an outline icon.",
+      propSchema: videoAiIconNodeSchema,
     },
     rect: {
       description:
         "Rectangle shape with optional fill, stroke, and corner radius.",
       propSchema: videoRectNodeSchema,
+    },
+    stack: {
+      description:
+        "Lays out children in a vertical or horizontal sequence with automatic spacing.",
+      propSchema: videoStackNodeSchema,
     },
     text: {
       description:
@@ -66,8 +70,8 @@ Create a polished but simple motion graphic from this request:
 "${prompt}"
 
 Pad the timeline: add roughly 1 second of delay before the first animation starts and 1 second of hold after the last animation ends. Space out transitions so they don't all fire immediately one after another — give each beat room to breathe.
-Use \`place: "center"\` for content that should appear visually centered.
-Use \`anchorTo\` to stack elements relative to each other instead of computing coordinates.
+Prefer semantic layout nodes over manual positioning: use \`center\`, \`align\`, and \`stack\`.
+Keep root nodes simple and compose layouts by referencing child IDs in layout nodes.
 Use \`dx\`/\`dy\` in the timeline for relative motion — avoid absolute coordinate math.
 Keep all elements fully inside the canvas.
 If the request implies unsupported media, reinterpret it as a stylized text-and-shape scene.

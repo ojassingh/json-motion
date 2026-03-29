@@ -1,6 +1,6 @@
 export const PROMPT_SUGGESTIONS = [
-  "Square fades in and rotates 360 degrees.",
-  "Bold title slides up, pauses, then fades away.",
-  "Two panels reveal a product name with a clean outro card.",
-  "Soft gradient background with a badge pop-in and closing CTA.",
+  "Centered title and subtitle stack that fades in, lifts slightly, then fades out.",
+  "Top-right badge, centered headline, and a bottom CTA bar with simple motion.",
+  "Three stacked text lines with a clean staggered fade and slide up.",
+  "A single rounded rectangle card with a short headline and subtle rotate-in.",
 ] as const;

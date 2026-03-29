@@ -25,7 +25,7 @@ export function PromptInput() {
         {generations.length === 0 ? (
           <div className="mt-40 flex flex-col gap-1.5 p-2.5 text-center">
             <p className="mt-4 mb-2 text-muted-foreground text-sm">
-              Choose what you&apos;d like to generate
+              Choose a simple text-and-shape scene to generate
             </p>
             {PROMPT_SUGGESTIONS.map((s) => (
               <button
@@ -76,7 +76,7 @@ export function PromptInput() {
                 e.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="Describe the motion..."
+            placeholder="Describe a simple text-and-shape motion scene..."
             rows={3}
             value={prompt}
           />

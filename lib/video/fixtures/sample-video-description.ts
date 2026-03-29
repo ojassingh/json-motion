@@ -1,4 +1,12 @@
+import type { IconNode } from "lucide-react";
+
 import type { VideoDescription } from "@/lib/types/video";
+import { createVideoIconNode } from "@/lib/video/lucide";
+
+const arrowRightIconNode: IconNode = [
+  ["path", { d: "M5 12h14" }],
+  ["path", { d: "m12 5 7 7-7 7" }],
+];
 
 export const sampleVideoDescription: VideoDescription = {
   background: "#07111f",
@@ -40,6 +48,16 @@ export const sampleVideoDescription: VideoDescription = {
           x: 88,
           y: 280,
         },
+        "accent-icon": createVideoIconNode({
+          height: 24,
+          iconNode: arrowRightIconNode,
+          opacity: 0,
+          stroke: "#0f172a",
+          strokeWidth: 2.5,
+          width: 24,
+          x: 228,
+          y: 292,
+        }),
       },
       startFrame: 0,
       timeline: [
@@ -48,7 +66,7 @@ export const sampleVideoDescription: VideoDescription = {
           dur: 0.15,
           ease: "ease-out",
           opacity: 1,
-          target: ["hero-card", "headline", "accent-bar"],
+          target: ["hero-card", "headline", "accent-bar", "accent-icon"],
         },
       ],
     },
