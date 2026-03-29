@@ -1,12 +1,16 @@
 mod animation;
 mod color;
 mod encode;
+mod icon;
 mod layout;
-mod shared;
 mod render;
 mod schema;
+mod shared;
+mod text;
 
-use rayon::prelude::*;
+#[cfg(test)]
+mod pipeline_review_tests;
+
 use std::env;
 use std::fs;
 use std::process;
@@ -29,30 +33,26 @@ fn run() -> Result<(), String> {
     let desc: schema::VideoDescription =
         serde_json::from_str(&json).map_err(|error| format!("invalid scene JSON: {error}"))?;
 
-    let total = animation::total_frame_count(&desc);
+    let total = animation::total_frame_count(&desc)?;
     eprintln!(
         "scene: {}x{} @ {}fps, {total} frames, codec={codec}",
         desc.width, desc.height, desc.fps
     );
 
-    let font = render::load_default_font();
+    let font = text::load_default_font();
 
     let precomputed: Vec<animation::PrecomputedScene<'_>> = desc
         .scenes
         .iter()
         .map(|scene| animation::PrecomputedScene::new(scene, &desc))
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
-    let frames: Result<Vec<Vec<u8>>, String> = (0..total)
-        .into_par_iter()
-        .map(|i| {
-            let frame = animation::resolve_frame_fast(&desc, i, &precomputed);
-            render::render_frame(desc.width, desc.height, &frame, font.as_ref())
-        })
-        .collect();
-    let frames = frames?;
+    let frames = (0..total).map(|i| {
+        let frame = animation::resolve_frame_fast(&desc, i, &precomputed, font.as_ref())?;
+        render::render_frame(desc.width, desc.height, &frame, font.as_ref())
+    });
 
-    eprintln!("rendered {total} frames, encoding...");
+    eprintln!("rendering and encoding {total} frames...");
 
     encode::encode(
         desc.width,
@@ -60,7 +60,7 @@ fn run() -> Result<(), String> {
         desc.fps,
         &codec,
         output_path,
-        frames.into_iter(),
+        frames,
     )?;
 
     eprintln!("done: {output_path}");

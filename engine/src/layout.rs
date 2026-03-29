@@ -1,36 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
+use skia_safe::Typeface;
 use taffy::prelude::*;
 
-use crate::schema::{Anchor, Node, StackAlign, StackDirection, TextNode};
-
-const DEFAULT_FONT_SIZE: f64 = 48.0;
-const DEFAULT_LINE_HEIGHT_MULT: f64 = 1.2;
-const TEXT_WIDTH_FACTOR: f64 = 0.6;
-
-#[derive(Clone, Copy)]
-enum ParentKind {
-    Root,
-    Layout,
-}
-
-fn estimate_text_width(text: &str, font_size: f64) -> f64 {
-    text.split('\n')
-        .map(|line| line.chars().count() as f64 * font_size * TEXT_WIDTH_FACTOR)
-        .fold(0.0, f64::max)
-}
-
-fn text_dimensions(text: &TextNode) -> (f64, f64) {
-    let line_count = text.text.split('\n').count() as f64;
-    let font_size = text.size.unwrap_or(DEFAULT_FONT_SIZE);
-    let line_height = text
-        .line_height
-        .unwrap_or(font_size * DEFAULT_LINE_HEIGHT_MULT);
-    let width = text
-        .max_width
-        .unwrap_or_else(|| estimate_text_width(&text.text, font_size));
-    (width, line_count * line_height)
-}
+use crate::schema::{Anchor, Node, StackAlign, StackDirection};
+use crate::text;
 
 fn roots(nodes: &indexmap::IndexMap<String, Node>) -> Vec<String> {
     let mut child_ids = HashSet::new();
@@ -85,25 +59,23 @@ fn stack_alignment(align: Option<StackAlign>) -> Option<AlignItems> {
     }
 }
 
-fn justify_for_anchor(anchor: Anchor) -> Option<JustifyContent> {
-    match anchor {
-        Anchor::TopLeft | Anchor::CenterLeft | Anchor::BottomLeft => Some(JustifyContent::Start),
-        Anchor::TopCenter | Anchor::Center | Anchor::BottomCenter => Some(JustifyContent::Center),
-        Anchor::TopRight | Anchor::CenterRight | Anchor::BottomRight => Some(JustifyContent::End),
-    }
+fn anchor_to_flex(anchor: Anchor) -> (JustifyContent, AlignItems) {
+    let justify = match anchor {
+        Anchor::TopLeft | Anchor::CenterLeft | Anchor::BottomLeft => JustifyContent::Start,
+        Anchor::TopCenter | Anchor::Center | Anchor::BottomCenter => JustifyContent::Center,
+        Anchor::TopRight | Anchor::CenterRight | Anchor::BottomRight => JustifyContent::End,
+    };
+    let align = match anchor {
+        Anchor::TopLeft | Anchor::TopCenter | Anchor::TopRight => AlignItems::Start,
+        Anchor::CenterLeft | Anchor::Center | Anchor::CenterRight => AlignItems::Center,
+        Anchor::BottomLeft | Anchor::BottomCenter | Anchor::BottomRight => AlignItems::End,
+    };
+    (justify, align)
 }
 
-fn align_for_anchor(anchor: Anchor) -> Option<AlignItems> {
-    match anchor {
-        Anchor::TopLeft | Anchor::TopCenter | Anchor::TopRight => Some(AlignItems::Start),
-        Anchor::CenterLeft | Anchor::Center | Anchor::CenterRight => Some(AlignItems::Center),
-        Anchor::BottomLeft | Anchor::BottomCenter | Anchor::BottomRight => Some(AlignItems::End),
-    }
-}
-
-fn style_for_node(node: &Node, parent_kind: ParentKind) -> Style {
+fn style_for_node(node: &Node, is_root: bool, default_typeface: Option<&Typeface>) -> Style {
     let mut style = Style::default();
-    if matches!(parent_kind, ParentKind::Root) {
+    if is_root {
         style.position = Position::Absolute;
     }
 
@@ -111,21 +83,12 @@ fn style_for_node(node: &Node, parent_kind: ParentKind) -> Style {
         Node::Rect(node) => {
             style.size = fixed_size(node.width, node.height);
         }
+        Node::Icon(node) => {
+            style.size = fixed_size(node.width, node.height);
+        }
         Node::Text(node) => {
-            let (width, height) = text_dimensions(node);
-            style.size = fixed_size(width, height);
-        }
-        Node::Image(node) => {
-            style.size = fixed_size(node.width, node.height);
-        }
-        Node::Math(node) => {
-            style.size = fixed_size(node.width.unwrap_or(0.0), node.height.unwrap_or(0.0));
-        }
-        Node::FunctionGraph(node) => {
-            style.size = fixed_size(node.width, node.height);
-        }
-        Node::ParametricGraph(node) => {
-            style.size = fixed_size(node.width, node.height);
+            let measured = text::measure_text_node(node, default_typeface);
+            style.size = fixed_size(measured.width, measured.height);
         }
         Node::Center(node) => {
             style.display = Display::Flex;
@@ -135,9 +98,10 @@ fn style_for_node(node: &Node, parent_kind: ParentKind) -> Style {
         }
         Node::Align(node) => {
             let padding = node.padding.unwrap_or(0.0) as f32;
+            let (justify, align) = anchor_to_flex(node.position);
             style.display = Display::Flex;
-            style.justify_content = justify_for_anchor(node.position);
-            style.align_items = align_for_anchor(node.position);
+            style.justify_content = Some(justify);
+            style.align_items = Some(align);
             style.size = optional_size(node.width, node.height, true);
             style.padding = Rect {
                 left: length(padding),
@@ -163,30 +127,37 @@ fn style_for_node(node: &Node, parent_kind: ParentKind) -> Style {
 
 fn build_tree(
     id: &str,
-    parent_kind: ParentKind,
+    is_root: bool,
     nodes: &indexmap::IndexMap<String, Node>,
+    default_typeface: Option<&Typeface>,
     tree: &mut TaffyTree<()>,
     built: &mut HashMap<String, NodeId>,
+    visiting: &mut HashSet<String>,
 ) -> Result<NodeId, String> {
     if let Some(node_id) = built.get(id) {
         return Ok(*node_id);
     }
+    if !visiting.insert(id.to_string()) {
+        return Err(format!("circular child reference detected at {id}"));
+    }
     let node = nodes
         .get(id)
         .ok_or_else(|| format!("missing node {id} during layout"))?;
-    let child_ids = node.children().to_vec();
-    let mut child_nodes = Vec::with_capacity(child_ids.len());
-    for child_id in &child_ids {
+    let mut child_nodes = Vec::with_capacity(node.children().len());
+    for child_id in node.children() {
         child_nodes.push(build_tree(
             child_id,
-            ParentKind::Layout,
+            false,
             nodes,
+            default_typeface,
             tree,
             built,
+            visiting,
         )?);
     }
 
-    let style = style_for_node(node, parent_kind);
+    visiting.remove(id);
+    let style = style_for_node(node, is_root, default_typeface);
     let node_id = if child_nodes.is_empty() {
         tree.new_leaf(style)
             .map_err(|error| format!("failed to create layout leaf {id}: {error}"))?
@@ -231,41 +202,47 @@ pub fn resolve_layout(
     nodes: &indexmap::IndexMap<String, Node>,
     frame_w: f64,
     frame_h: f64,
-) -> HashMap<String, (f64, f64)> {
+    default_typeface: Option<&Typeface>,
+) -> Result<HashMap<String, (f64, f64)>, String> {
     let mut positions = HashMap::new();
     let root_ids = roots(nodes);
+    if !nodes.is_empty() && root_ids.is_empty() {
+        return Err("scene nodes must form a rooted tree".to_string());
+    }
     let mut tree: TaffyTree<()> = TaffyTree::new();
     let mut built = HashMap::new();
+    let mut visiting = HashSet::new();
 
     let mut root_children = Vec::with_capacity(root_ids.len());
     for root_id in &root_ids {
-        match build_tree(root_id, ParentKind::Root, nodes, &mut tree, &mut built) {
-            Ok(node_id) => root_children.push(node_id),
-            Err(_) => return positions,
-        }
+        let node_id = build_tree(
+            root_id,
+            true,
+            nodes,
+            default_typeface,
+            &mut tree,
+            &mut built,
+            &mut visiting,
+        )?;
+        root_children.push(node_id);
     }
 
-    let root = match tree.new_with_children(
+    let root = tree
+        .new_with_children(
         Style {
             size: fixed_size(frame_w, frame_h),
             ..Default::default()
         },
         &root_children,
-    ) {
-        Ok(root) => root,
-        Err(_) => return positions,
-    };
+    )
+        .map_err(|error| format!("failed to create root layout node: {error}"))?;
 
-    if tree.compute_layout(root, Size::MAX_CONTENT).is_err() {
-        return positions;
-    }
+    tree.compute_layout(root, Size::MAX_CONTENT)
+        .map_err(|error| format!("failed to compute layout: {error}"))?;
 
     for root_id in &root_ids {
-        if collect_positions(root_id, (0.0, 0.0), nodes, &tree, &built, &mut positions).is_err()
-        {
-            return HashMap::new();
-        }
+        collect_positions(root_id, (0.0, 0.0), nodes, &tree, &built, &mut positions)?;
     }
 
-    positions
+    Ok(positions)
 }

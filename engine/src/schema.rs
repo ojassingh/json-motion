@@ -70,6 +70,22 @@ pub enum TextAlign {
     Right,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IconLineCap {
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IconLineJoin {
+    Bevel,
+    Miter,
+    Round,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum FontWeight {
@@ -151,20 +167,14 @@ pub enum Node {
     Align(AlignNode),
     #[serde(rename = "center")]
     Center(CenterNode),
+    #[serde(rename = "icon")]
+    Icon(IconNode),
     #[serde(rename = "rect")]
     Rect(RectNode),
     #[serde(rename = "stack")]
     Stack(StackNode),
     #[serde(rename = "text")]
     Text(TextNode),
-    #[serde(rename = "image")]
-    Image(ImageNode),
-    #[serde(rename = "math")]
-    Math(MathNode),
-    #[serde(rename = "functionGraph")]
-    FunctionGraph(FunctionGraphNode),
-    #[serde(rename = "parametricGraph")]
-    ParametricGraph(ParametricGraphNode),
 }
 
 impl Node {
@@ -172,13 +182,10 @@ impl Node {
         match self {
             Self::Align(n) => &n.base,
             Self::Center(n) => &n.base,
+            Self::Icon(n) => &n.base,
             Self::Rect(n) => &n.base,
             Self::Stack(n) => &n.base,
             Self::Text(n) => &n.base,
-            Self::Image(n) => &n.base,
-            Self::Math(n) => &n.base,
-            Self::FunctionGraph(n) => &n.base,
-            Self::ParametricGraph(n) => &n.base,
         }
     }
 
@@ -261,59 +268,78 @@ pub struct TextNode {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ImageNode {
+pub struct IconNode {
     #[serde(flatten)]
     pub base: NodeBase,
     pub width: f64,
     pub height: f64,
-    pub src: String,
-    pub fit: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MathNode {
-    #[serde(flatten)]
-    pub base: NodeBase,
-    pub latex: String,
-    pub font_size: f64,
-    pub color: Option<String>,
-    pub width: Option<f64>,
-    pub height: Option<f64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FunctionGraphNode {
-    #[serde(flatten)]
-    pub base: NodeBase,
-    pub width: f64,
-    pub height: f64,
-    #[serde(rename = "fn")]
-    pub function: String,
-    pub x_range: Vec<f64>,
-    pub y_range: Vec<f64>,
-    pub color: Option<String>,
-    pub draw_progress: Option<f64>,
-    pub show_axes: Option<bool>,
-    pub show_grid: Option<bool>,
+    pub viewport_width: Option<f64>,
+    pub viewport_height: Option<f64>,
+    pub stroke: Option<String>,
+    pub fill: Option<String>,
     pub stroke_width: Option<f64>,
+    pub absolute_stroke_width: Option<bool>,
+    pub line_cap: Option<IconLineCap>,
+    pub line_join: Option<IconLineJoin>,
+    #[serde(default)]
+    pub elements: Vec<IconPrimitive>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ParametricGraphNode {
-    #[serde(flatten)]
-    pub base: NodeBase,
+#[serde(tag = "type")]
+pub enum IconPrimitive {
+    #[serde(rename = "path")]
+    Path(IconPathPrimitive),
+    #[serde(rename = "circle")]
+    Circle(IconCirclePrimitive),
+    #[serde(rename = "line")]
+    Line(IconLinePrimitive),
+    #[serde(rename = "polyline")]
+    Polyline(IconPolylinePrimitive),
+    #[serde(rename = "polygon")]
+    Polygon(IconPolygonPrimitive),
+    #[serde(rename = "rect")]
+    Rect(IconRectPrimitive),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IconPathPrimitive {
+    pub d: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IconCirclePrimitive {
+    pub cx: f64,
+    pub cy: f64,
+    pub r: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IconLinePrimitive {
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IconPolylinePrimitive {
+    pub points: Vec<(f64, f64)>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IconPolygonPrimitive {
+    pub points: Vec<(f64, f64)>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IconRectPrimitive {
+    pub x: Option<f64>,
+    pub y: Option<f64>,
     pub width: f64,
     pub height: f64,
-    pub fn_x: String,
-    pub fn_y: String,
-    pub t_range: Vec<f64>,
-    pub color: Option<String>,
-    pub draw_progress: Option<f64>,
-    pub samples: Option<u32>,
-    pub stroke_width: Option<f64>,
+    pub rx: Option<f64>,
+    pub ry: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------

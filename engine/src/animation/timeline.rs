@@ -21,14 +21,20 @@ pub fn get_node_events(node_id: &str, timeline: &[TimelineEvent]) -> Vec<Timelin
     out
 }
 
-pub fn total_frame_count(desc: &VideoDescription) -> u32 {
+pub fn total_frame_count(desc: &VideoDescription) -> Result<u32, String> {
     desc.scenes
         .iter()
-        .map(|s| scene_end_frame(s) + 1)
-        .max()
-        .unwrap_or(0)
+        .map(scene_end_frame_exclusive)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|frames| frames.into_iter().max().unwrap_or(0))
 }
 
-fn scene_end_frame(scene: &SceneEntry) -> u32 {
-    scene.start_frame + scene.duration - 1
+fn scene_end_frame_exclusive(scene: &SceneEntry) -> Result<u32, String> {
+    if scene.duration == 0 {
+        return Err(format!("scene {} has invalid duration 0", scene.id));
+    }
+    scene
+        .start_frame
+        .checked_add(scene.duration)
+        .ok_or_else(|| format!("scene {} frame range overflowed", scene.id))
 }
