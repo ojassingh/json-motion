@@ -33,7 +33,11 @@ export const renderVideo = async (
     ? createCustomRenderOutputTarget(options.outputFilePath, options.jobId)
     : await createRenderOutputTarget(options?.jobId);
 
-  await renderVideoWithRust(videoDescription, outputTarget.filePath, codec);
+  const timings = await renderVideoWithRust(
+    videoDescription,
+    outputTarget.filePath,
+    codec
+  );
 
   return {
     ...outputTarget,
@@ -41,6 +45,7 @@ export const renderVideo = async (
     fps: videoDescription.fps,
     frameCount,
     height: videoDescription.height,
+    timings,
     width: videoDescription.width,
   };
 };

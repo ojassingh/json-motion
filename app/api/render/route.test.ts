@@ -56,6 +56,10 @@ const renderResult: RenderedVideoResult = {
   height: 720,
   jobId: "job-123",
   publicUrl: "/renders/job-123.mp4",
+  timings: {
+    encodeMs: 412,
+    renderMs: 1287,
+  },
   width: 1280,
 };
 
@@ -100,6 +104,10 @@ describe("POST /api/render", () => {
       fps: 60,
       frameCount: 240,
       jobId: "job-123",
+      timings: {
+        encodeMs: 412,
+        renderMs: 1287,
+      },
       url: "/renders/job-123.mp4",
     });
   });

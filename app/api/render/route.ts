@@ -21,6 +21,7 @@ export async function POST(request: Request): Promise<Response> {
       fps: renderResult.fps,
       frameCount: renderResult.frameCount,
       jobId: renderResult.jobId,
+      timings: renderResult.timings,
       url: renderResult.publicUrl,
     });
   } catch (error) {
