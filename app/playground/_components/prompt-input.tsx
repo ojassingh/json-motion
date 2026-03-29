@@ -14,7 +14,7 @@ export function PromptInput() {
   const isLoading = phase !== "idle";
 
   return (
-    <aside className="flex w-96 shrink-0 flex-col border-r">
+    <aside className="flex h-full w-full flex-col">
       <div className="flex h-9 items-center border-b px-3">
         <span className="font-mono text-muted-foreground text-xs">
           prompt input
