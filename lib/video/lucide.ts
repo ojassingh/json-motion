@@ -7,7 +7,9 @@ import type {
   VideoIconNode,
   VideoIconPrimitive,
   VideoNode,
+  VideoTextNode,
 } from "@/lib/types/video";
+import { extractDisplayLatex, latexToIcon } from "@/lib/video/latex";
 
 type IconAttributes = Record<string, string | number>;
 
@@ -15,6 +17,7 @@ type IconAttributes = Record<string, string | number>;
 // Handles both .ts (source) and .js (dist) extensions and single/double quotes.
 const ICON_PATH_REGEX = /icons\/([^'"]+?)\.(?:ts|js)/;
 const POINT_SPLIT_REGEX = /[\s,]+/;
+const DEFAULT_TEXT_COLOR = "#f8fafc";
 
 export type LucideIconName = keyof typeof dynamicIconImports;
 
@@ -197,6 +200,42 @@ const resolveAiIconNode = async (
   });
 };
 
+const resolveAiTextNode = (node: VideoTextNode): VideoNode => {
+  const latex = extractDisplayLatex(node.text);
+
+  if (!latex) {
+    return node;
+  }
+
+  const icon = latexToIcon(latex, {
+    fontSize: node.size,
+  });
+
+  const iconNode: VideoIconNode = {
+    absoluteStrokeWidth: false,
+    elements: icon.elements,
+    fill: node.color ?? DEFAULT_TEXT_COLOR,
+    height: icon.height,
+    opacity: node.opacity,
+    rotate: node.rotate,
+    scale: node.scale,
+    scaleX: node.scaleX,
+    scaleY: node.scaleY,
+    skewX: node.skewX,
+    skewY: node.skewY,
+    strokeWidth: 0,
+    type: "icon",
+    viewportHeight: icon.viewportHeight,
+    viewportWidth: icon.viewportWidth,
+    width: icon.width,
+    x: node.x,
+    y: node.y,
+    zIndex: node.zIndex,
+  };
+
+  return iconNode;
+};
+
 // Converts the nodes map from an AI output scene (name-based icons) into a
 // fully-resolved map ready for the Rust engine (elements-based icons).
 export const resolveAiSceneNodes = async (
@@ -204,12 +243,17 @@ export const resolveAiSceneNodes = async (
 ): Promise<Record<string, VideoNode>> => {
   const entries = await Promise.all(
     Object.entries(nodes).map(
-      async ([id, node]): Promise<[string, VideoNode]> => [
-        id,
-        node.type === "icon"
-          ? await resolveAiIconNode(node)
-          : (node as VideoNode),
-      ]
+      async ([id, node]): Promise<[string, VideoNode]> => {
+        if (node.type === "icon") {
+          return [id, await resolveAiIconNode(node)];
+        }
+
+        if (node.type === "text") {
+          return [id, resolveAiTextNode(node)];
+        }
+
+        return [id, node];
+      }
     )
   );
   return Object.fromEntries(entries);
