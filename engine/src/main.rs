@@ -29,15 +29,21 @@ fn run() -> Result<(), String> {
     let input_path = &args[1];
     let output_path = &args[2];
 
+    let force_cpu = args.iter().any(|a| a == "--backend=cpu");
+    let use_gpu = !force_cpu && (cfg!(feature = "gpu") || args.iter().any(|a| a == "--backend=gpu"));
+
     let codec = args
         .get(3)
         .filter(|a| !a.starts_with("--"))
         .cloned()
         .or_else(|| env::var("VIDEO_RENDER_CODEC").ok())
-        .unwrap_or_else(|| "libx264".to_string());
-
-    let force_cpu = args.iter().any(|a| a == "--backend=cpu");
-    let use_gpu = !force_cpu && (cfg!(feature = "gpu") || args.iter().any(|a| a == "--backend=gpu"));
+        .unwrap_or_else(|| {
+            if use_gpu {
+                encode::pick_best_h264_encoder()
+            } else {
+                "libx264".to_string()
+            }
+        });
 
     let json = fs::read_to_string(input_path)
         .map_err(|error| format!("failed to read {input_path}: {error}"))?;
