@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
 use skia_safe::{
-    surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Paint, TextBlob, Typeface,
-    paint,
+    surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Paint, TextBlob, paint,
 };
 
 use crate::schema::TextAlign;
 use crate::shared::types::{ResolvedNode, ResolvedText};
-use crate::text::{self, MeasuredText, TextMeasurer};
+use crate::text::{self, TextMeasurer};
 
 pub struct GlyphRegion {
     pub x: u32,
@@ -80,15 +79,19 @@ pub fn build_text_atlas(
                 None => continue,
             };
 
-            let bounds = blob.bounds();
-            let w = bounds.width().ceil() as u32 + 2;
-            let h = bounds.height().ceil() as u32 + 2;
+            let bounds_left = blob.bounds().left;
+            let bounds_top = blob.bounds().top;
+            let bounds_w = blob.bounds().width();
+            let bounds_h = blob.bounds().height();
+
+            let w = bounds_w.ceil() as u32 + 2;
+            let h = bounds_h.ceil() as u32 + 2;
             if w == 0 || h == 0 {
                 continue;
             }
 
-            let draw_x = -bounds.left + 1.0;
-            let draw_y = -bounds.top + 1.0;
+            let draw_x = -bounds_left + 1.0;
+            let draw_y = -bounds_top + 1.0;
 
             line_rasters.push(LineRaster {
                 node_idx,
@@ -98,7 +101,7 @@ pub fn build_text_atlas(
                 draw_x,
                 draw_y,
                 world_x: node.x as f32 + line_x,
-                world_y: node.y as f32 + baseline_y + bounds.top - 1.0,
+                world_y: node.y as f32 + baseline_y + bounds_top - 1.0,
             });
         }
     }
