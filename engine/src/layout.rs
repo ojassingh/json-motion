@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use skia_safe::Typeface;
 use taffy::prelude::*;
 
 use crate::schema::{Anchor, Node, StackAlign, StackDirection};
-use crate::text;
+use crate::text::TextMeasurer;
 
 fn roots(nodes: &indexmap::IndexMap<String, Node>) -> Vec<String> {
     let mut child_ids = HashSet::new();
@@ -73,7 +72,7 @@ fn anchor_to_flex(anchor: Anchor) -> (JustifyContent, AlignItems) {
     (justify, align)
 }
 
-fn style_for_node(node: &Node, is_root: bool, default_typeface: Option<&Typeface>) -> Style {
+fn style_for_node(node: &Node, is_root: bool, measurer: &impl TextMeasurer) -> Style {
     let mut style = Style::default();
     if is_root {
         style.position = Position::Absolute;
@@ -87,7 +86,7 @@ fn style_for_node(node: &Node, is_root: bool, default_typeface: Option<&Typeface
             style.size = fixed_size(node.width, node.height);
         }
         Node::Text(node) => {
-            let measured = text::measure_text_node(node, default_typeface);
+            let measured = measurer.measure_text_node(node);
             style.size = fixed_size(measured.width, measured.height);
         }
         Node::Center(node) => {
@@ -129,7 +128,7 @@ fn build_tree(
     id: &str,
     is_root: bool,
     nodes: &indexmap::IndexMap<String, Node>,
-    default_typeface: Option<&Typeface>,
+    measurer: &impl TextMeasurer,
     tree: &mut TaffyTree<()>,
     built: &mut HashMap<String, NodeId>,
     visiting: &mut HashSet<String>,
@@ -149,7 +148,7 @@ fn build_tree(
             child_id,
             false,
             nodes,
-            default_typeface,
+            measurer,
             tree,
             built,
             visiting,
@@ -157,7 +156,7 @@ fn build_tree(
     }
 
     visiting.remove(id);
-    let style = style_for_node(node, is_root, default_typeface);
+    let style = style_for_node(node, is_root, measurer);
     let node_id = if child_nodes.is_empty() {
         tree.new_leaf(style)
             .map_err(|error| format!("failed to create layout leaf {id}: {error}"))?
@@ -202,7 +201,7 @@ pub fn resolve_layout(
     nodes: &indexmap::IndexMap<String, Node>,
     frame_w: f64,
     frame_h: f64,
-    default_typeface: Option<&Typeface>,
+    measurer: &impl TextMeasurer,
 ) -> Result<HashMap<String, (f64, f64)>, String> {
     let mut positions = HashMap::new();
     let root_ids = roots(nodes);
@@ -219,7 +218,7 @@ pub fn resolve_layout(
             root_id,
             true,
             nodes,
-            default_typeface,
+            measurer,
             &mut tree,
             &mut built,
             &mut visiting,

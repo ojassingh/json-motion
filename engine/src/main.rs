@@ -15,6 +15,8 @@ use std::env;
 use std::fs;
 use std::process;
 
+use crate::render::RenderBackend;
+
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -39,23 +41,9 @@ fn run() -> Result<(), String> {
         desc.width, desc.height, desc.fps
     );
 
-    let font = text::load_default_font();
-
-    let precomputed: Vec<animation::PrecomputedScene<'_>> = desc
-        .scenes
-        .iter()
-        .map(|scene| animation::PrecomputedScene::new(scene, &desc))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let frames = (0..total).map(|i| {
-        let desc = &desc;
-        let precomputed = &precomputed;
-        let font = &font;
-        move || {
-            let frame = animation::resolve_frame_fast(desc, i, precomputed, font.as_ref())?;
-            render::render_frame(desc.width, desc.height, &frame, font.as_ref())
-        }
-    });
+    let measurer = text::SkiaTextMeasurer::new();
+    let compiled = animation::compile_video(&desc, &measurer)?;
+    let mut backend = render::CpuSkiaBackend::new();
 
     eprintln!("rendering and encoding {total} frames...");
 
@@ -65,7 +53,11 @@ fn run() -> Result<(), String> {
         desc.fps,
         &codec,
         output_path,
-        frames,
+        total as usize,
+        |frame_index, target| {
+            let frame = animation::resolve_frame_fast(&compiled, frame_index as u32, &measurer)?;
+            backend.render_into(&frame, target, &measurer)
+        },
     )?;
 
     eprintln!(

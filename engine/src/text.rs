@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use skia_safe::{Font, FontMgr, FontStyle, Paint, Typeface};
 
@@ -8,20 +9,42 @@ use crate::shared::types::ResolvedText;
 
 const TEXT_WIDTH_FACTOR: f64 = 0.6;
 
-thread_local! {
-    static FONT_MGR: RefCell<FontMgr> = RefCell::new(FontMgr::new());
-}
-
+#[derive(Clone)]
 pub struct MeasuredLine {
     pub left: f32,
     pub width: f32,
 }
 
+#[derive(Clone)]
 pub struct MeasuredText {
     pub width: f64,
     pub height: f64,
     pub baseline_offset: f32,
     pub lines: Vec<MeasuredLine>,
+}
+
+#[derive(Clone, Hash, Eq, PartialEq)]
+struct TextMeasureKey {
+    font_family: Option<String>,
+    font_size_bits: u64,
+    line_height_bits: u64,
+    max_width_bits: Option<u64>,
+    text: String,
+}
+
+pub trait TextMeasurer {
+    fn default_typeface(&self) -> Option<&Typeface>;
+    fn measure_resolved_text(&self, text: &ResolvedText) -> MeasuredText;
+    fn measure_text_node(&self, node: &TextNode) -> MeasuredText;
+}
+
+pub struct SkiaTextMeasurer {
+    cache: RefCell<HashMap<TextMeasureKey, MeasuredText>>,
+    default_typeface: Option<Typeface>,
+}
+
+thread_local! {
+    static FONT_MGR: RefCell<FontMgr> = RefCell::new(FontMgr::new());
 }
 
 pub fn load_default_font() -> Option<Typeface> {
@@ -37,33 +60,75 @@ pub fn load_default_font() -> Option<Typeface> {
     })
 }
 
-pub fn measure_text_node(node: &TextNode, default_typeface: Option<&Typeface>) -> MeasuredText {
-    let font_size = node.size.unwrap_or(DEFAULT_FONT_SIZE);
-    let line_height = node
-        .line_height
-        .unwrap_or(font_size * DEFAULT_LINE_HEIGHT_MULT);
-    measure_text(
-        &node.text,
-        node.font_family.as_deref(),
-        font_size,
-        line_height,
-        node.max_width,
-        default_typeface,
-    )
+impl SkiaTextMeasurer {
+    pub fn new() -> Self {
+        Self {
+            cache: RefCell::new(HashMap::new()),
+            default_typeface: load_default_font(),
+        }
+    }
+
+    fn measure_cached(
+        &self,
+        text: &str,
+        font_family: Option<&str>,
+        font_size: f64,
+        line_height: f64,
+        max_width: Option<f64>,
+    ) -> MeasuredText {
+        let key = TextMeasureKey {
+            font_family: font_family.map(str::to_string),
+            font_size_bits: font_size.to_bits(),
+            line_height_bits: line_height.to_bits(),
+            max_width_bits: max_width.map(f64::to_bits),
+            text: text.to_string(),
+        };
+
+        if let Some(measured) = self.cache.borrow().get(&key) {
+            return measured.clone();
+        }
+
+        let measured = measure_text(
+            text,
+            font_family,
+            font_size,
+            line_height,
+            max_width,
+            self.default_typeface.as_ref(),
+        );
+        self.cache.borrow_mut().insert(key, measured.clone());
+        measured
+    }
 }
 
-pub fn measure_resolved_text(
-    text: &ResolvedText,
-    default_typeface: Option<&Typeface>,
-) -> MeasuredText {
-    measure_text(
-        &text.text,
-        text.font_family.as_deref(),
-        text.font_size,
-        text.line_height,
-        text.max_width,
-        default_typeface,
-    )
+impl TextMeasurer for SkiaTextMeasurer {
+    fn default_typeface(&self) -> Option<&Typeface> {
+        self.default_typeface.as_ref()
+    }
+
+    fn measure_resolved_text(&self, text: &ResolvedText) -> MeasuredText {
+        self.measure_cached(
+            &text.text,
+            text.font_family.as_deref(),
+            text.font_size,
+            text.line_height,
+            text.max_width,
+        )
+    }
+
+    fn measure_text_node(&self, node: &TextNode) -> MeasuredText {
+        let font_size = node.size.unwrap_or(DEFAULT_FONT_SIZE);
+        let line_height = node
+            .line_height
+            .unwrap_or(font_size * DEFAULT_LINE_HEIGHT_MULT);
+        self.measure_cached(
+            &node.text,
+            node.font_family.as_deref(),
+            font_size,
+            line_height,
+            node.max_width,
+        )
+    }
 }
 
 pub fn resolve_typeface(

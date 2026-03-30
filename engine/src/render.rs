@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use skia_safe::{
     paint,
     surfaces,
@@ -14,39 +12,76 @@ use skia_safe::{
     RRect,
     Surface,
     TextBlob,
-    Typeface,
 };
 
 use crate::icon;
 use crate::schema::TextAlign;
 use crate::shared::types::{ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText};
-use crate::text;
+use crate::text::{self, TextMeasurer};
 
-thread_local! {
-    static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) };
+pub struct FrameBuffer {
+    pixels: Vec<u8>,
+    height: u32,
+    width: u32,
 }
 
-pub fn render_frame(
-    width: u32,
-    height: u32,
-    frame: &ResolvedFrame,
-    font: Option<&Typeface>,
-) -> Result<Vec<u8>, String> {
-    SURFACE.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        let recreate = slot.as_ref().is_none_or(|s| {
-            s.image_info().width() != width as i32 || s.image_info().height() != height as i32
+pub trait RenderBackend {
+    fn render_into(
+        &mut self,
+        frame: &ResolvedFrame,
+        target: &mut FrameBuffer,
+        measurer: &impl TextMeasurer,
+    ) -> Result<(), String>;
+}
+
+pub struct CpuSkiaBackend {
+    surface: Option<Surface>,
+}
+
+impl FrameBuffer {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            pixels: vec![0_u8; width as usize * height as usize * 4],
+            height,
+            width,
+        }
+    }
+
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
+}
+
+impl CpuSkiaBackend {
+    pub fn new() -> Self {
+        Self { surface: None }
+    }
+
+    fn surface(&mut self, width: u32, height: u32) -> Result<&mut Surface, String> {
+        let recreate = self.surface.as_ref().is_none_or(|surface| {
+            surface.image_info().width() != width as i32 || surface.image_info().height() != height as i32
         });
         if recreate {
-            *slot = Some(
+            self.surface = Some(
                 surfaces::raster_n32_premul((width as i32, height as i32))
                     .ok_or_else(|| format!("failed to create surface {width}x{height}"))?,
             );
         }
-        let Some(surface) = slot.as_mut() else {
-            return Err("render surface unavailable".to_string());
-        };
 
+        self.surface
+            .as_mut()
+            .ok_or_else(|| "render surface unavailable".to_string())
+    }
+}
+
+impl RenderBackend for CpuSkiaBackend {
+    fn render_into(
+        &mut self,
+        frame: &ResolvedFrame,
+        target: &mut FrameBuffer,
+        measurer: &impl TextMeasurer,
+    ) -> Result<(), String> {
+        let surface = self.surface(target.width, target.height)?;
         let (br, bg, bb) = frame.background;
         let canvas = surface.canvas();
         canvas.clear(Color::from_argb(255, br, bg, bb));
@@ -55,16 +90,12 @@ pub fn render_frame(
             match &node.data {
                 ResolvedNodeData::Icon(icon) => icon::draw_icon(canvas, node, icon),
                 ResolvedNodeData::Rect(rect) => draw_rect(canvas, node, rect),
-                ResolvedNodeData::Text(text) => {
-                    if let Some(typeface) = font {
-                        draw_text(canvas, node, text, typeface);
-                    }
-                }
+                ResolvedNodeData::Text(text) => draw_text(canvas, node, text, measurer),
             }
         }
 
-        read_rgba_pixels(surface, width, height)
-    })
+        read_rgba_pixels(surface, target)
+    }
 }
 
 pub(crate) fn make_paint(alpha: u8, (r, g, b): (u8, u8, u8), style: paint::Style) -> Paint {
@@ -117,12 +148,17 @@ fn draw_rect(canvas: &skia_safe::Canvas, node: &ResolvedNode, rect: &ResolvedRec
     canvas.restore();
 }
 
-fn draw_text(canvas: &skia_safe::Canvas, node: &ResolvedNode, text: &ResolvedText, typeface: &Typeface) {
+fn draw_text(
+    canvas: &skia_safe::Canvas,
+    node: &ResolvedNode,
+    text: &ResolvedText,
+    measurer: &impl TextMeasurer,
+) {
     let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
-    let Some(resolved_typeface) = text::resolve_typeface(text.font_family.as_deref(), Some(typeface)) else {
+    let Some(resolved_typeface) = text::resolve_typeface(text.font_family.as_deref(), measurer.default_typeface()) else {
         return;
     };
-    let measured = text::measure_resolved_text(text, Some(&resolved_typeface));
+    let measured = measurer.measure_resolved_text(text);
     let font = Font::from_typeface(resolved_typeface, text.font_size as f32);
     let paint = make_paint(alpha, text.color, paint::Style::Fill);
     let container_width = measured.width as f32;
@@ -149,17 +185,16 @@ fn draw_text(canvas: &skia_safe::Canvas, node: &ResolvedNode, text: &ResolvedTex
     canvas.restore();
 }
 
-fn read_rgba_pixels(surface: &mut Surface, width: u32, height: u32) -> Result<Vec<u8>, String> {
+fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(), String> {
     let info = ImageInfo::new(
-        (width as i32, height as i32),
+        (target.width as i32, target.height as i32),
         ColorType::RGBA8888,
         AlphaType::Unpremul,
         None,
     );
-    let mut pixels = vec![0_u8; (width as usize) * (height as usize) * 4];
-    let row_bytes = width as usize * 4;
-    if surface.read_pixels(&info, pixels.as_mut_slice(), row_bytes, (0, 0)) {
-        Ok(pixels)
+    let row_bytes = target.width as usize * 4;
+    if surface.read_pixels(&info, target.pixels.as_mut_slice(), row_bytes, (0, 0)) {
+        Ok(())
     } else {
         Err("failed to read surface pixels".to_string())
     }
@@ -167,9 +202,10 @@ fn read_rgba_pixels(surface: &mut Surface, width: u32, height: u32) -> Result<Ve
 
 #[cfg(test)]
 mod tests {
-    use super::render_frame;
+    use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
     use crate::shared::types::{ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData};
+    use crate::text::SkiaTextMeasurer;
 
     #[test]
     fn icon_rendering_should_paint_non_background_pixels() {
@@ -208,10 +244,17 @@ mod tests {
                 source_index: 0,
             }],
         };
+        let measurer = SkiaTextMeasurer::new();
+        let mut backend = CpuSkiaBackend::new();
+        let mut buffer = FrameBuffer::new(48, 48);
 
-        let pixels = render_frame(48, 48, &frame, None).expect("icon frame should render");
+        backend
+            .render_into(&frame, &mut buffer, &measurer)
+            .expect("icon frame should render");
+
         assert!(
-            pixels
+            buffer
+                .pixels()
                 .chunks_exact(4)
                 .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
             "expected icon rendering to change at least one pixel"

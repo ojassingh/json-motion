@@ -8,6 +8,8 @@ use ffmpeg::util::format::pixel::Pixel;
 use ffmpeg::util::rational::Rational;
 use std::time::{Duration, Instant};
 
+use crate::render::FrameBuffer;
+
 pub struct EncodeTimings {
     pub encode: Duration,
     pub render: Duration,
@@ -101,10 +103,11 @@ pub fn encode<F>(
     fps: f64,
     codec: &str,
     output_path: &str,
-    frames: impl Iterator<Item = F>,
+    frame_count: usize,
+    mut render_frame: F,
 ) -> Result<EncodeTimings, String>
 where
-    F: FnOnce() -> Result<Vec<u8>, String>,
+    F: FnMut(usize, &mut FrameBuffer) -> Result<(), String>,
 {
     ffmpeg::init().map_err(|error| format!("failed to initialize ffmpeg: {error}"))?;
 
@@ -182,17 +185,17 @@ where
 
     let mut render_duration = Duration::ZERO;
     let mut encode_duration = Duration::ZERO;
+    let mut frame_buffer = FrameBuffer::new(width, height);
+    let mut rgba = frame::Video::new(Pixel::RGBA, width, height);
+    let mut converted = frame::Video::new(pixel_format, width, height);
 
-    for (index, frame_fn) in frames.enumerate() {
+    for index in 0..frame_count {
         let render_start = Instant::now();
-        let frame_data = frame_fn()?;
+        render_frame(index, &mut frame_buffer)?;
         render_duration += render_start.elapsed();
 
         let encode_start = Instant::now();
-        let mut rgba = frame::Video::new(Pixel::RGBA, width, height);
-        copy_rgba_frame(&mut rgba, &frame_data, width as usize, height as usize)?;
-
-        let mut converted = frame::Video::new(pixel_format, width, height);
+        copy_rgba_frame(&mut rgba, frame_buffer.pixels(), width as usize, height as usize)?;
         scaler
             .run(&rgba, &mut converted)
             .map_err(|error| format!("failed to convert frame {index}: {error}"))?;
