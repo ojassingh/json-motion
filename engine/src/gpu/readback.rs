@@ -78,7 +78,9 @@ impl ReadbackBuffer {
             let _ = sender.send(result);
         });
 
-        device.poll(wgpu::Maintain::Wait);
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| format!("GPU poll error: {e}"))?;
 
         receiver
             .recv()
