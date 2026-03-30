@@ -1,4 +1,5 @@
 mod atlas;
+mod path_pipeline;
 mod readback;
 mod rect;
 mod text_pipeline;
@@ -10,6 +11,7 @@ use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
 use crate::shared::types::{ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedText};
 use crate::text::TextMeasurer;
 
+use path_pipeline::{PathBatch, PathPipeline, PathVertex};
 use readback::ReadbackBuffer;
 use rect::{RectBatch, RectInstance, RectPipeline};
 use text_pipeline::{TextBatch, TextInstance, TextPipeline};
@@ -42,6 +44,7 @@ pub struct WgpuBackend {
     readback: ReadbackBuffer,
     rect_pipeline: RectPipeline,
     text_pipeline: TextPipeline,
+    path_pipeline: PathPipeline,
     atlas_sampler: wgpu::Sampler,
     globals_buf: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
@@ -123,6 +126,8 @@ impl WgpuBackend {
             RectPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
         let text_pipeline =
             TextPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
+        let path_pipeline =
+            PathPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
 
         let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("atlas_sampler"),
@@ -142,6 +147,7 @@ impl WgpuBackend {
             readback,
             rect_pipeline,
             text_pipeline,
+            path_pipeline,
             atlas_sampler,
             globals_buf,
             globals_bind_group,
@@ -214,6 +220,17 @@ impl WgpuBackend {
                 }
             })
             .collect();
+
+        let mut all_path_verts: Vec<PathVertex> = Vec::new();
+        let mut all_path_indices: Vec<u32> = Vec::new();
+        for node in &frame.nodes {
+            if let ResolvedNodeData::Icon(icon) = &node.data {
+                let (verts, indices) = path_pipeline::tessellate_icon(node, icon);
+                let base = all_path_verts.len() as u32;
+                all_path_verts.extend_from_slice(&verts);
+                all_path_indices.extend(indices.iter().map(|i| i + base));
+            }
+        }
 
         let atlas_build = atlas::build_text_atlas(&text_nodes, measurer);
 
@@ -310,6 +327,14 @@ impl WgpuBackend {
                     &text_instances,
                 );
             }
+
+            PathBatch::draw(
+                &self.path_pipeline,
+                &mut pass,
+                &self.device,
+                &all_path_verts,
+                &all_path_indices,
+            );
         }
 
         self.readback.copy_from_texture(
@@ -332,17 +357,7 @@ impl RenderBackend for WgpuBackend {
         measurer: &dyn TextMeasurer,
     ) -> Result<(), String> {
         self.ensure_dims(target.width(), target.height());
-
-        let has_icons = frame
-            .nodes
-            .iter()
-            .any(|n| matches!(n.data, ResolvedNodeData::Icon(_)));
-
-        if has_icons {
-            self.cpu_fallback.render_into(frame, target, measurer)
-        } else {
-            self.render_gpu(frame, target, measurer)
-        }
+        self.render_gpu(frame, target, measurer)
     }
 }
 
