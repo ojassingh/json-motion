@@ -5,6 +5,16 @@
 
 ---
 
+## Engine Runtime Performance Layer
+
+- [ ] Compile scene timelines into reusable property tracks and frame indexes.
+- [ ] Reuse static layout results when scene timelines do not affect layout-critical properties.
+- [ ] Introduce a small render backend boundary plus reusable frame buffers for encoding.
+- [ ] Add benchmark coverage for simple, dense-rect, dense-text, and dense-icon fixtures.
+- [ ] Run before/after verification, capture benchmark results, and document review notes.
+
+---
+
 ## Preview Panel Raw Output + Timing UI
 
 - [x] Inspect the shared preview panel data flow for home and playground.
