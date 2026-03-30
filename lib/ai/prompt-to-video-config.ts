@@ -54,7 +54,7 @@ export const videoCatalog = defineCatalog({
     },
     text: {
       description:
-        "Renders a text string. Supports multiline with \\n. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
+        "Renders a text string. Supports multiline with \\n. Wrap display math in $$...$$ to render it as LaTeX. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
       propSchema: videoTextNodeSchema,
     },
   },

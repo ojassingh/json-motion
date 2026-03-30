@@ -120,3 +120,29 @@
 - [x] Remove the left-column fixed-height workaround from the home preview panel.
 - [x] Give the home preview panel itself a bounded height so both columns stretch to the same row height.
 - [x] Reuse the same inner sizing pattern as the playground preview panel and verify linting.
+
+---
+
+## LaTeX Math Rendering
+
+- [x] Detect display-math text nodes wrapped in `$$...$$` during AI node resolution.
+- [x] Convert LaTeX into MathJax SVG, flatten the SVG into path primitives, and reuse the existing icon renderer.
+- [x] Teach the AI prompt catalog that `$$...$$` renders display math.
+- [x] Add focused regression tests for LaTeX parsing and node conversion.
+- [x] Verify Bun tests, TypeScript, Ultracite, Rust tests, Clippy, Rust release build, and Next.js production build.
+
+### Review
+
+- Added `lib/video/latex.ts`, which uses MathJax to render display math and converts the resulting SVG into flattened path primitives that fit the existing `icon` node contract.
+- Updated `resolveAiSceneNodes()` so AI-generated text nodes wrapped in `$$...$$` become filled icon nodes while preserving layout and transform properties.
+- Updated the prompt catalog to explicitly tell the model to wrap display math in `$$...$$` when LaTeX rendering is desired.
+
+### Verification
+
+- `bun test`
+- `bun x tsc --noEmit`
+- `bun x ultracite check`
+- `cargo test` in `engine/`
+- `cargo clippy --all-targets --locked -- -D warnings` in `engine/`
+- `cargo build --release` in `engine/`
+- `bun run build`
