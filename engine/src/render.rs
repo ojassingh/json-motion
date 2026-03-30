@@ -30,7 +30,7 @@ pub trait RenderBackend {
         &mut self,
         frame: &ResolvedFrame,
         target: &mut FrameBuffer,
-        measurer: &impl TextMeasurer,
+        measurer: &dyn TextMeasurer,
     ) -> Result<(), String>;
 }
 
@@ -79,7 +79,7 @@ impl RenderBackend for CpuSkiaBackend {
         &mut self,
         frame: &ResolvedFrame,
         target: &mut FrameBuffer,
-        measurer: &impl TextMeasurer,
+        measurer: &dyn TextMeasurer,
     ) -> Result<(), String> {
         let surface = self.surface(target.width, target.height)?;
         let (br, bg, bb) = frame.background;
@@ -152,7 +152,7 @@ fn draw_text(
     canvas: &skia_safe::Canvas,
     node: &ResolvedNode,
     text: &ResolvedText,
-    measurer: &impl TextMeasurer,
+    measurer: &dyn TextMeasurer,
 ) {
     let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
     let Some(resolved_typeface) = text::resolve_typeface(text.font_family.as_deref(), measurer.default_typeface()) else {
@@ -249,7 +249,7 @@ mod tests {
         let mut buffer = FrameBuffer::new(48, 48);
 
         backend
-            .render_into(&frame, &mut buffer, &measurer)
+            .render_into(&frame, &mut buffer, &measurer as &dyn _)
             .expect("icon frame should render");
 
         assert!(
