@@ -7,7 +7,7 @@ mod text_pipeline;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
+use crate::render::{FrameBuffer, RenderBackend};
 use crate::shared::types::{ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedText};
 use crate::text::TextMeasurer;
 
@@ -48,7 +48,6 @@ pub struct WgpuBackend {
     atlas_sampler: wgpu::Sampler,
     globals_buf: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
-    cpu_fallback: CpuSkiaBackend,
     fb_width: u32,
     fb_height: u32,
 }
@@ -151,7 +150,6 @@ impl WgpuBackend {
             atlas_sampler,
             globals_buf,
             globals_bind_group,
-            cpu_fallback: CpuSkiaBackend::new(),
             fb_width: width,
             fb_height: height,
         })
