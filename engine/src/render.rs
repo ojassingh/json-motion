@@ -50,6 +50,18 @@ impl FrameBuffer {
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
+
+    pub fn pixels_mut(&mut self) -> &mut [u8] {
+        &mut self.pixels
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
 }
 
 impl CpuSkiaBackend {
