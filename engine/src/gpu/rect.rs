@@ -159,7 +159,7 @@ impl RectPipeline {
     pub fn new(
         device: &wgpu::Device,
         framebuffer_format: wgpu::TextureFormat,
-        globals_layout: &wgpu::BindGroupLayout,
+        globals_layout: &Option<&wgpu::BindGroupLayout>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect_shader"),
@@ -168,10 +168,11 @@ impl RectPipeline {
             ),
         });
 
+        // wgpu 29: bind_group_layouts is &[Option<&BindGroupLayout>], no push_constant_ranges
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect_pipeline_layout"),
-            bind_group_layouts: &[globals_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[*globals_layout],
+            immediate_size: 0,
         });
 
         let instance_attrs = RectInstance::vertex_attributes(1);
@@ -218,7 +219,8 @@ impl RectPipeline {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            // wgpu 29: multiview → multiview_mask
+            multiview_mask: None,
             cache: None,
         });
 
