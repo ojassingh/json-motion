@@ -383,3 +383,131 @@ fn make_framebuffer(
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     (texture, view)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::WgpuBackend;
+    use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
+    use crate::schema::{
+        IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, TextAlign,
+    };
+    use crate::shared::types::{
+        ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+    };
+    use crate::text::SkiaTextMeasurer;
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn gpu_backend_should_roughly_match_cpu_for_mixed_frame() {
+        let frame = ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![
+                ResolvedNode {
+                    data: ResolvedNodeData::Rect(ResolvedRect {
+                        width: 36.0,
+                        height: 24.0,
+                        fill: Some((56, 189, 248)),
+                        stroke: Some((15, 23, 42)),
+                        stroke_width: 2.0,
+                        corner_radius: 6.0,
+                    }),
+                    x: 8.0,
+                    y: 10.0,
+                    opacity: 1.0,
+                    rotation: 8.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 0,
+                    source_index: 0,
+                },
+                ResolvedNode {
+                    data: ResolvedNodeData::Text(ResolvedText {
+                        text: "GPU".to_string(),
+                        color: (15, 23, 42),
+                        font_family: None,
+                        font_size: 18.0,
+                        line_height: 22.0,
+                        max_width: None,
+                        text_align: TextAlign::Left,
+                    }),
+                    x: 40.0,
+                    y: 28.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 1,
+                    source_index: 1,
+                },
+                ResolvedNode {
+                    data: ResolvedNodeData::Icon(ResolvedIcon {
+                        width: 28.0,
+                        height: 28.0,
+                        viewport_width: 24.0,
+                        viewport_height: 24.0,
+                        stroke: (14, 165, 233),
+                        fill: None,
+                        stroke_width: 2.0,
+                        absolute_stroke_width: false,
+                        line_cap: IconLineCap::Round,
+                        line_join: IconLineJoin::Round,
+                        elements: vec![
+                            IconPrimitive::Path(IconPathPrimitive {
+                                d: "M5 12h14".to_string(),
+                            }),
+                            IconPrimitive::Path(IconPathPrimitive {
+                                d: "m12 5 7 7-7 7".to_string(),
+                            }),
+                        ],
+                    }),
+                    x: 54.0,
+                    y: 52.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 2,
+                    source_index: 2,
+                },
+            ],
+        };
+
+        let measurer = SkiaTextMeasurer::new();
+        let mut cpu = CpuSkiaBackend::new();
+        let mut gpu = WgpuBackend::new(96, 96).expect("gpu backend init");
+        let mut cpu_buf = FrameBuffer::new(96, 96);
+        let mut gpu_buf = FrameBuffer::new(96, 96);
+
+        cpu.render_into(&frame, &mut cpu_buf, &measurer)
+            .expect("cpu render");
+        gpu.render_into(&frame, &mut gpu_buf, &measurer)
+            .expect("gpu render");
+
+        let mut total_diff: u64 = 0;
+        let mut changed_pixels: u32 = 0;
+        for (cpu_px, gpu_px) in cpu_buf
+            .pixels()
+            .chunks_exact(4)
+            .zip(gpu_buf.pixels().chunks_exact(4))
+        {
+            let pixel_diff = cpu_px
+                .iter()
+                .zip(gpu_px.iter())
+                .map(|(a, b)| a.abs_diff(*b) as u32)
+                .sum::<u32>();
+            total_diff += pixel_diff as u64;
+            if pixel_diff > 48 {
+                changed_pixels += 1;
+            }
+        }
+
+        assert!(total_diff < 320_000, "total diff too high: {total_diff}");
+        assert!(changed_pixels < 1_200, "changed pixels too high: {changed_pixels}");
+    }
+}
