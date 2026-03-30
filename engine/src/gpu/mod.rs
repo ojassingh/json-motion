@@ -1,15 +1,18 @@
+mod atlas;
 mod readback;
 mod rect;
+mod text_pipeline;
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-use crate::shared::types::{ResolvedFrame, ResolvedNodeData};
+use crate::shared::types::{ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedText};
 use crate::text::TextMeasurer;
 
 use readback::ReadbackBuffer;
 use rect::{RectBatch, RectInstance, RectPipeline};
+use text_pipeline::{TextBatch, TextInstance, TextPipeline};
 
 /// RGBA8 linear — same channel order as ffmpeg's `Pixel::RGBA`.
 const FRAMEBUFFER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -38,6 +41,8 @@ pub struct WgpuBackend {
     framebuffer_view: wgpu::TextureView,
     readback: ReadbackBuffer,
     rect_pipeline: RectPipeline,
+    text_pipeline: TextPipeline,
+    atlas_sampler: wgpu::Sampler,
     globals_buf: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
     cpu_fallback: CpuSkiaBackend,
@@ -116,6 +121,15 @@ impl WgpuBackend {
 
         let rect_pipeline =
             RectPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
+        let text_pipeline =
+            TextPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
+
+        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("atlas_sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
 
         let (framebuffer, framebuffer_view) = make_framebuffer(&device, width, height);
         let readback = ReadbackBuffer::new(&device, width, height);
@@ -127,6 +141,8 @@ impl WgpuBackend {
             framebuffer_view,
             readback,
             rect_pipeline,
+            text_pipeline,
+            atlas_sampler,
             globals_buf,
             globals_bind_group,
             cpu_fallback: CpuSkiaBackend::new(),
@@ -160,11 +176,11 @@ impl WgpuBackend {
         self.fb_height = height;
     }
 
-    /// Full GPU path: render all rects + clear background.
-    fn render_rects_gpu(
+    fn render_gpu(
         &mut self,
         frame: &ResolvedFrame,
         target: &mut FrameBuffer,
+        measurer: &dyn TextMeasurer,
     ) -> Result<(), String> {
         let (bg_r, bg_g, bg_b) = frame.background;
         let bg_color = wgpu::Color {
@@ -174,7 +190,7 @@ impl WgpuBackend {
             a: 1.0,
         };
 
-        let instances: Vec<RectInstance> = frame
+        let rect_instances: Vec<RectInstance> = frame
             .nodes
             .iter()
             .filter_map(|node| {
@@ -185,6 +201,78 @@ impl WgpuBackend {
                 }
             })
             .collect();
+
+        let text_nodes: Vec<(usize, &ResolvedNode, &ResolvedText)> = frame
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, node)| {
+                if let ResolvedNodeData::Text(t) = &node.data {
+                    Some((i, node, t))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let atlas_build = atlas::build_text_atlas(&text_nodes, measurer);
+
+        let (_atlas_texture, _atlas_view, atlas_bg, text_instances) =
+            if let Some(ref ab) = atlas_build {
+                let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("glyph_atlas"),
+                    size: wgpu::Extent3d {
+                        width: ab.width,
+                        height: ab.height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::R8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &tex,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &ab.pixels,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(ab.width),
+                        rows_per_image: Some(ab.height),
+                    },
+                    wgpu::Extent3d {
+                        width: ab.width,
+                        height: ab.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                let bg = self.text_pipeline.create_atlas_bind_group(
+                    &self.device,
+                    &view,
+                    &self.atlas_sampler,
+                );
+
+                let aw = ab.width as f32;
+                let ah = ab.height as f32;
+                let mut instances = Vec::new();
+                for entry in &ab.entries {
+                    let node = &frame.nodes[entry.node_idx];
+                    for line in &entry.lines {
+                        instances.push(TextInstance::from_line(node, line, aw, ah));
+                    }
+                }
+
+                (Some(tex), Some(view), Some(bg), instances)
+            } else {
+                (None, None, None, Vec::new())
+            };
 
         let mut encoder = self
             .device
@@ -198,7 +286,6 @@ impl WgpuBackend {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.framebuffer_view,
                     resolve_target: None,
-                    // wgpu 29: depth_slice required
                     depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(bg_color),
@@ -208,12 +295,21 @@ impl WgpuBackend {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-                // wgpu 29: multiview_mask required
                 multiview_mask: None,
             });
 
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            RectBatch::draw(&self.rect_pipeline, &mut pass, &self.device, &instances);
+            RectBatch::draw(&self.rect_pipeline, &mut pass, &self.device, &rect_instances);
+
+            if let Some(ref bg) = atlas_bg {
+                TextBatch::draw(
+                    &self.text_pipeline,
+                    &mut pass,
+                    &self.device,
+                    bg,
+                    &text_instances,
+                );
+            }
         }
 
         self.readback.copy_from_texture(
@@ -237,17 +333,15 @@ impl RenderBackend for WgpuBackend {
     ) -> Result<(), String> {
         self.ensure_dims(target.width(), target.height());
 
-        // Phase 1: pure GPU path only when every node is a rect.
-        // Text and icon support arrive in Phases 2 and 3.
-        let all_rects = frame
+        let has_icons = frame
             .nodes
             .iter()
-            .all(|n| matches!(n.data, ResolvedNodeData::Rect(_)));
+            .any(|n| matches!(n.data, ResolvedNodeData::Icon(_)));
 
-        if all_rects {
-            self.render_rects_gpu(frame, target)
-        } else {
+        if has_icons {
             self.cpu_fallback.render_into(frame, target, measurer)
+        } else {
+            self.render_gpu(frame, target, measurer)
         }
     }
 }
