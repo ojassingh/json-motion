@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
-use lyon::math::point;
-use lyon::path::PathEvent;
+use lyon::extra::parser::ParserOptions;
 use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillTessellator, FillVertexConstructor,
     StrokeOptions, StrokeTessellator, StrokeVertexConstructor, VertexBuffers,
@@ -173,11 +172,13 @@ pub fn tessellate_icon(
     for element in &icon.elements {
         let svg_d = primitive_to_svg(element);
         let Some(ref d) = svg_d else { continue };
-        let Ok(path) = lyon::extra::parser::parse(d) else { continue };
-        let events: Vec<PathEvent> = path.collect();
+
         let mut builder = lyon::path::Path::builder();
-        for event in &events {
-            builder.path_event(*event);
+        let mut parser = lyon::extra::parser::PathParser::new();
+        let mut source = lyon::extra::parser::Source::new(d.chars());
+        let opts = ParserOptions::DEFAULT;
+        if parser.parse(&opts, &mut source, &mut builder).is_err() {
+            continue;
         }
         let lyon_path = builder.build();
 
