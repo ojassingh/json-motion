@@ -203,6 +203,7 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
+    use crate::text::TextMeasurer;
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
     use crate::shared::types::{ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData};
     use crate::text::SkiaTextMeasurer;
@@ -249,7 +250,7 @@ mod tests {
         let mut buffer = FrameBuffer::new(48, 48);
 
         backend
-            .render_into(&frame, &mut buffer, &measurer as &dyn _)
+            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
             .expect("icon frame should render");
 
         assert!(
