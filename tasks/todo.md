@@ -10,8 +10,39 @@
 - [x] Compile scene timelines into reusable property tracks and frame indexes.
 - [x] Reuse static layout results when scene timelines do not affect layout-critical properties.
 - [x] Introduce a small render backend boundary plus reusable frame buffers for encoding.
-- [ ] Add benchmark coverage for simple, dense-rect, dense-text, and dense-icon fixtures.
-- [ ] Run before/after verification, capture benchmark results, and document review notes.
+- [x] Add benchmark coverage for simple motion, dense rects, dense animation, dense text, and dense icon fixtures.
+- [x] Run before/after verification, capture benchmark results, and document review notes.
+
+### Review
+
+- Added a minimal runtime compile step in the Rust engine so property tracks are built once per scene instead of per node-property lookup on every frame.
+- Added a small `TextMeasurer` boundary plus static-layout reuse for scenes whose timelines do not touch layout-critical properties.
+- Replaced per-frame output allocation with a reusable `FrameBuffer` path and a tiny `RenderBackend` seam that still keeps the current CPU Skia renderer as the only backend.
+- Added an end-to-end benchmark harness at `scripts/benchmark-engine.ts` with five fixtures: simple motion, 2,000 rects, 400 animated rects, 200 stacked text nodes, and 300 icons.
+
+### Verification
+
+- `cargo test` in `engine/`
+- `cargo clippy --all-targets --locked -- -D warnings` in `engine/`
+- `cargo build --release` in `engine/`
+- `bun x tsc --noEmit`
+- `BENCH_ITERATIONS=3 bun run bench:engine`
+
+### Benchmarks
+
+- Environment: macOS hardware encode via `h264_videotoolbox`, averaged across 3 runs per fixture.
+- Baseline commit: `3dec23f`
+- Current branch: `codex/runtime-eval-backend` after the runtime refactor and benchmark harness.
+
+| Case | Before Render | After Render | Delta | Before Wall | After Wall | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `simple_motion` | 140.04ms | 134.88ms | -3.7% | 925.54ms | 735.22ms | -20.6% |
+| `dense_rect_grid_2000` | 468.22ms | 339.98ms | -27.4% | 937.73ms | 806.03ms | -14.0% |
+| `animated_rect_grid_400` | 685.05ms | 661.31ms | -3.5% | 1781.73ms | 1738.47ms | -2.4% |
+| `layout_text_stack_200` | 190.40ms | 119.48ms | -37.2% | 705.84ms | 590.90ms | -16.3% |
+| `icon_grid_300` | 283.32ms | 231.76ms | -18.2% | 791.09ms | 692.73ms | -12.4% |
+
+- The keyframe-heavy animated grid improved only modestly. That is useful signal: the current refactor removes repeated segment construction and some allocation churn, but it does not yet add the broader evaluator caching or parallelism that will be needed for larger animation-heavy wins.
 
 ---
 
