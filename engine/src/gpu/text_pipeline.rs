@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt;
 
 use crate::shared::types::ResolvedNode;
 
-use super::atlas::{AtlasBuild, TextLineEntry};
+use super::atlas::TextLineEntry;
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
