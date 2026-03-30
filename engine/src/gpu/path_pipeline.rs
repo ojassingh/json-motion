@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use bytemuck::{Pod, Zeroable};
 use lyon::extra::parser::ParserOptions;
 use lyon::tessellation::{
@@ -8,9 +6,8 @@ use lyon::tessellation::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::render::apply_node_transform;
 use crate::schema::{
-    IconCirclePrimitive, IconLineCap, IconLineJoin, IconPrimitive, IconRectPrimitive,
+    IconLineCap, IconLineJoin, IconPrimitive,
 };
 use crate::shared::types::{ResolvedIcon, ResolvedNode};
 
