@@ -36,7 +36,8 @@ fn run() -> Result<(), String> {
         .or_else(|| env::var("VIDEO_RENDER_CODEC").ok())
         .unwrap_or_else(|| "libx264".to_string());
 
-    let use_gpu = args.iter().any(|a| a == "--backend=gpu");
+    let force_cpu = args.iter().any(|a| a == "--backend=cpu");
+    let use_gpu = !force_cpu && (cfg!(feature = "gpu") || args.iter().any(|a| a == "--backend=gpu"));
 
     let json = fs::read_to_string(input_path)
         .map_err(|error| format!("failed to read {input_path}: {error}"))?;
