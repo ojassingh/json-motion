@@ -185,17 +185,30 @@ where
 
     let mut render_duration = Duration::ZERO;
     let mut encode_duration = Duration::ZERO;
-    let mut frame_buffer = FrameBuffer::new(width, height);
+
+    let mut fb_a = FrameBuffer::new(width, height);
+    let mut fb_b = FrameBuffer::new(width, height);
     let mut rgba = frame::Video::new(Pixel::RGBA, width, height);
     let mut converted = frame::Video::new(pixel_format, width, height);
 
+    let w = width as usize;
+    let h = height as usize;
+
+    if frame_count > 0 {
+        let render_start = Instant::now();
+        render_frame(0, &mut fb_a)?;
+        render_duration += render_start.elapsed();
+    }
+
     for index in 0..frame_count {
         let render_start = Instant::now();
-        render_frame(index, &mut frame_buffer)?;
+        if index + 1 < frame_count {
+            render_frame(index + 1, &mut fb_b)?;
+        }
         render_duration += render_start.elapsed();
 
         let encode_start = Instant::now();
-        copy_rgba_frame(&mut rgba, frame_buffer.pixels(), width as usize, height as usize)?;
+        copy_rgba_frame(&mut rgba, fb_a.pixels(), w, h)?;
         scaler
             .run(&rgba, &mut converted)
             .map_err(|error| format!("failed to convert frame {index}: {error}"))?;
@@ -212,6 +225,8 @@ where
             output_time_base,
         )?;
         encode_duration += encode_start.elapsed();
+
+        std::mem::swap(&mut fb_a, &mut fb_b);
     }
 
     let flush_start = Instant::now();
