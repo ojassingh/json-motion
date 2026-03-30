@@ -49,9 +49,12 @@ impl WgpuBackend {
     /// Initialise a wgpu device and all GPU resources for the given canvas size.
     /// Returns `Err` if no suitable GPU adapter is found.
     pub fn new(width: u32, height: u32) -> Result<Self, String> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            flags: wgpu::InstanceFlags::default(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         let adapter = pollster::block_on(instance.request_adapter(
@@ -61,16 +64,17 @@ impl WgpuBackend {
                 force_fallback_adapter: false,
             },
         ))
-        .ok_or_else(|| "no suitable GPU adapter found".to_string())?;
+        .map_err(|e| format!("no suitable GPU adapter found: {e}"))?;
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("engine"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: Default::default(),
+                trace: wgpu::Trace::Off,
             },
-            None,
         ))
         .map_err(|e| format!("failed to create wgpu device: {e}"))?;
 
@@ -88,6 +92,8 @@ impl WgpuBackend {
                     count: None,
                 }],
             });
+        // wgpu 29: bind_group_layouts takes &[Option<&BindGroupLayout>]
+        let globals_layout_opt = Some(&globals_layout);
 
         let globals_data = Globals {
             canvas_size: [width as f32, height as f32],
@@ -109,7 +115,7 @@ impl WgpuBackend {
         });
 
         let rect_pipeline =
-            RectPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout);
+            RectPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
 
         let (framebuffer, framebuffer_view) = make_framebuffer(&device, width, height);
         let readback = ReadbackBuffer::new(&device, width, height);
@@ -192,6 +198,8 @@ impl WgpuBackend {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.framebuffer_view,
                     resolve_target: None,
+                    // wgpu 29: depth_slice required
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(bg_color),
                         store: wgpu::StoreOp::Store,
@@ -200,6 +208,8 @@ impl WgpuBackend {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                // wgpu 29: multiview_mask required
+                multiview_mask: None,
             });
 
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
