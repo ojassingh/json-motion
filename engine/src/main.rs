@@ -5,6 +5,7 @@ mod encode;
 mod gpu;
 mod icon;
 mod layout;
+mod parallel_encode;
 mod render;
 mod schema;
 mod shared;
@@ -31,6 +32,12 @@ fn run() -> Result<(), String> {
 
     let force_cpu = args.iter().any(|a| a == "--backend=cpu");
     let use_gpu = !force_cpu && (cfg!(feature = "gpu") || args.iter().any(|a| a == "--backend=gpu"));
+    let parallel_workers = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--parallel-workers="))
+        .and_then(|value| value.parse::<usize>().ok())
+        .or_else(|| env::var("VIDEO_RENDER_PARALLEL_WORKERS").ok()?.parse::<usize>().ok())
+        .unwrap_or(1);
 
     let codec = args
         .get(3)
@@ -63,7 +70,7 @@ fn run() -> Result<(), String> {
 
     let timings = run_encode(
         &desc, &compiled, &measurer, &codec, output_path,
-        total as usize, use_gpu,
+        total as usize, use_gpu, parallel_workers,
     )?;
 
     eprintln!(
@@ -84,9 +91,23 @@ fn run_encode(
     output_path: &str,
     total: usize,
     use_gpu: bool,
+    parallel_workers: usize,
 ) -> Result<encode::EncodeTimings, String> {
     #[cfg(feature = "gpu")]
     if use_gpu {
+        if parallel_workers > 1 {
+            eprintln!("backend=gpu (wgpu), parallel_workers={parallel_workers}");
+            return parallel_encode::parallel_encode(
+                desc,
+                compiled,
+                measurer,
+                codec,
+                output_path,
+                total,
+                parallel_workers,
+                gpu_backend_factory,
+            );
+        }
         match gpu::WgpuBackend::new(desc.width, desc.height) {
             Ok(mut backend) => {
                 eprintln!("backend=gpu (wgpu)");
@@ -111,6 +132,20 @@ fn run_encode(
         eprintln!("warning: engine built without the 'gpu' feature, using CPU");
     }
 
+    if parallel_workers > 1 {
+        eprintln!("backend=cpu (skia), parallel_workers={parallel_workers}");
+        return parallel_encode::parallel_encode(
+            desc,
+            compiled,
+            measurer,
+            codec,
+            output_path,
+            total,
+            parallel_workers,
+            cpu_backend_factory,
+        );
+    }
+
     eprintln!("backend=cpu (skia)");
     let mut backend = render::CpuSkiaBackend::new();
     encode::encode(
@@ -120,6 +155,15 @@ fn run_encode(
             backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
         },
     )
+}
+
+fn cpu_backend_factory(_width: u32, _height: u32) -> Result<Box<dyn RenderBackend>, String> {
+    Ok(Box::new(render::CpuSkiaBackend::new()))
+}
+
+#[cfg(feature = "gpu")]
+fn gpu_backend_factory(width: u32, height: u32) -> Result<Box<dyn RenderBackend>, String> {
+    Ok(Box::new(gpu::WgpuBackend::new(width, height)?))
 }
 
 fn main() {
