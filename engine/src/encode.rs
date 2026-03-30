@@ -15,6 +15,15 @@ pub struct EncodeTimings {
     pub render: Duration,
 }
 
+pub fn pick_best_h264_encoder() -> String {
+    for name in ["h264_nvenc", "h264_videotoolbox", "h264_qsv", "libx264"] {
+        if encoder::find_by_name(name).is_some() {
+            return name.to_string();
+        }
+    }
+    "libx264".to_string()
+}
+
 fn choose_pixel_format(codec: ffmpeg::Codec) -> Result<Pixel, String> {
     let video = codec
         .video()
