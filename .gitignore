@@ -40,3 +40,5 @@ next-env.d.ts
 /.cursor
 /public/renders
 /engine/target
+__pycache__/
+*.py[cod]

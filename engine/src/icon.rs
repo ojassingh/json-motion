@@ -1,7 +1,9 @@
 use skia_safe::{paint, Canvas, Paint, Path, RRect, Rect};
 
 use crate::render::{apply_node_transform, make_paint};
-use crate::schema::{IconCirclePrimitive, IconLineCap, IconLineJoin, IconPrimitive, IconRectPrimitive};
+use crate::schema::{
+    IconCirclePrimitive, IconLineCap, IconLineJoin, IconPrimitive, IconRectPrimitive,
+};
 use crate::shared::types::{ResolvedIcon, ResolvedNode};
 
 pub(crate) fn draw_icon(canvas: &Canvas, node: &ResolvedNode, icon: &ResolvedIcon) {
@@ -34,7 +36,12 @@ pub(crate) fn draw_icon(canvas: &Canvas, node: &ResolvedNode, icon: &ResolvedIco
     canvas.restore();
 }
 
-fn draw_primitive(canvas: &Canvas, primitive: &IconPrimitive, fill: Option<&Paint>, stroke: &Paint) {
+fn draw_primitive(
+    canvas: &Canvas,
+    primitive: &IconPrimitive,
+    fill: Option<&Paint>,
+    stroke: &Paint,
+) {
     match primitive {
         IconPrimitive::Path(p) => paint_path(canvas, &p.d, fill, Some(stroke)),
         IconPrimitive::Circle(c) => paint_circle(canvas, c, fill, stroke),
@@ -61,7 +68,9 @@ fn draw_primitive(canvas: &Canvas, primitive: &IconPrimitive, fill: Option<&Pain
 }
 
 fn paint_path(canvas: &Canvas, d: &str, fill: Option<&Paint>, stroke: Option<&Paint>) {
-    let Some(path) = Path::from_svg(d) else { return };
+    let Some(path) = Path::from_svg(d) else {
+        return;
+    };
     if let Some(f) = fill {
         canvas.draw_path(&path, f);
     }

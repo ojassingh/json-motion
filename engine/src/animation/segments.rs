@@ -3,114 +3,152 @@ use crate::schema::{Easing, TimelineEvent};
 
 use super::easing::ease;
 
+#[derive(Clone)]
 struct NumSeg {
     start: f64,
     end: f64,
-    from: f64,
     to: f64,
     easing: Easing,
 }
 
+#[derive(Clone)]
 struct ColorSeg {
     start: f64,
     end: f64,
-    from: String,
     to: String,
     easing: Easing,
 }
 
-fn build_num_segs(events: &[TimelineEvent], prop: &str, base: f64) -> Vec<NumSeg> {
-    let mut segs = Vec::new();
-    let mut last = base;
-    for ev in events {
-        if let Some(val) = ev.get_num(prop) {
-            let dur = ev.dur.unwrap_or(0.0);
-            segs.push(NumSeg {
-                start: ev.at,
-                end: ev.at + dur,
-                from: last,
-                to: val,
-                easing: ev.ease.unwrap_or(Easing::EaseOut),
-            });
-            last = val;
-        }
-    }
-    segs
+#[derive(Clone, Default)]
+pub(super) struct NumTrack {
+    segs: Vec<NumSeg>,
 }
 
-fn build_color_segs(
-    events: &[TimelineEvent],
-    prop: &str,
-    base: Option<&str>,
-) -> Vec<ColorSeg> {
-    let mut segs = Vec::new();
-    let mut last: Option<String> = base.map(String::from);
-    for ev in events {
-        if let Some(val) = ev.get_color(prop) {
-            match &last {
-                Some(prev) => {
-                    let dur = ev.dur.unwrap_or(0.0);
-                    segs.push(ColorSeg {
-                        start: ev.at,
-                        end: ev.at + dur,
-                        from: prev.clone(),
-                        to: val.to_string(),
-                        easing: ev.ease.unwrap_or(Easing::EaseOut),
-                    });
-                    last = Some(val.to_string());
-                }
-                None => last = Some(val.to_string()),
+impl NumTrack {
+    pub(super) fn compile(events: &[TimelineEvent], prop: &str) -> Option<Self> {
+        let segs = events
+            .iter()
+            .filter_map(|event| {
+                event.get_num(prop).map(|value| NumSeg {
+                    start: event.at,
+                    end: event.at + event.dur.unwrap_or(0.0),
+                    to: value,
+                    easing: event.ease.unwrap_or(Easing::EaseOut),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        if segs.is_empty() {
+            None
+        } else {
+            Some(Self { segs })
+        }
+    }
+
+    pub(super) fn resolve(&self, base: f64, t: f64) -> f64 {
+        let mut value = base;
+        for seg in &self.segs {
+            if t < seg.start {
+                return value;
             }
+            if t >= seg.end || seg.start == seg.end {
+                value = seg.to;
+                continue;
+            }
+
+            let raw = ((t - seg.start) / (seg.end - seg.start)).min(1.0);
+            return value + (seg.to - value) * ease(raw, seg.easing);
+        }
+        value
+    }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct ColorTrack {
+    segs: Vec<ColorSeg>,
+}
+
+impl ColorTrack {
+    pub(super) fn compile(events: &[TimelineEvent], prop: &str) -> Option<Self> {
+        let segs = events
+            .iter()
+            .filter_map(|event| {
+                event.get_color(prop).map(|value| ColorSeg {
+                    start: event.at,
+                    end: event.at + event.dur.unwrap_or(0.0),
+                    to: value.to_string(),
+                    easing: event.ease.unwrap_or(Easing::EaseOut),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        if segs.is_empty() {
+            None
+        } else {
+            Some(Self { segs })
         }
     }
-    segs
-}
 
-fn resolve_num(segs: &[NumSeg], base: f64, t: f64) -> f64 {
-    let mut val = base;
-    for s in segs {
-        if t < s.start {
-            return val;
+    pub(super) fn resolve(&self, base: Option<&str>, t: f64) -> Option<String> {
+        let mut value = base.map(str::to_string);
+        for seg in &self.segs {
+            if t < seg.start {
+                return value;
+            }
+            if t >= seg.end || seg.start == seg.end {
+                value = Some(seg.to.clone());
+                continue;
+            }
+
+            let from = value.as_deref().unwrap_or(&seg.to);
+            let raw = ((t - seg.start) / (seg.end - seg.start)).min(1.0);
+            return Some(color::lerp_oklch(from, &seg.to, ease(raw, seg.easing)));
         }
-        if t >= s.end || s.start == s.end {
-            val = s.to;
-            continue;
-        }
-        let raw = ((t - s.start) / (s.end - s.start)).min(1.0);
-        return s.from + (s.to - s.from) * ease(raw, s.easing);
+        value
     }
-    val
 }
 
-/// Convenience wrapper: build + resolve in one call so callers never touch
-/// the private `NumSeg` type.
-pub(super) fn num_at(events: &[TimelineEvent], prop: &str, base: f64, t: f64) -> f64 {
-    resolve_num(&build_num_segs(events, prop, base), base, t)
-}
+#[cfg(test)]
+mod tests {
+    use super::NumTrack;
+    use crate::schema::{EventTarget, TimelineEvent};
 
-/// Convenience wrapper: build + resolve in one call so callers never touch
-/// the private `ColorSeg` type.
-pub(super) fn color_at(
-    events: &[TimelineEvent],
-    prop: &str,
-    base: Option<&str>,
-    t: f64,
-) -> Option<String> {
-    resolve_color(&build_color_segs(events, prop, base), base, t)
-}
+    #[test]
+    fn num_track_should_resolve_against_the_runtime_base_value() {
+        let track = NumTrack::compile(
+            &[TimelineEvent {
+                target: EventTarget::Single("node".to_string()),
+                at: 1.0,
+                dur: Some(1.0),
+                ease: None,
+                action: None,
+                opacity: Some(10.0),
+                x: None,
+                y: None,
+                dx: None,
+                dy: None,
+                width: None,
+                height: None,
+                rotate: None,
+                scale: None,
+                scale_x: None,
+                scale_y: None,
+                skew_x: None,
+                skew_y: None,
+                corner_radius: None,
+                stroke_width: None,
+                size: None,
+                draw_progress: None,
+                fill: None,
+                stroke: None,
+                color: None,
+            }],
+            "opacity",
+        )
+        .expect("track should compile");
 
-fn resolve_color(segs: &[ColorSeg], base: Option<&str>, t: f64) -> Option<String> {
-    let mut val: Option<String> = base.map(String::from);
-    for s in segs {
-        if t < s.start {
-            return val;
-        }
-        if t >= s.end || s.start == s.end {
-            val = Some(s.to.clone());
-            continue;
-        }
-        let raw = ((t - s.start) / (s.end - s.start)).min(1.0);
-        return Some(color::lerp_oklch(&s.from, &s.to, ease(raw, s.easing)));
+        assert_eq!(track.resolve(2.0, 0.5), 2.0);
+        assert!(track.resolve(2.0, 1.5) > 2.0);
+        assert_eq!(track.resolve(2.0, 3.0), 10.0);
     }
-    val
 }

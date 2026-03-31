@@ -1,5 +1,11 @@
 use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive, TextAlign};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResolvedNodeBatchKind {
+    Dynamic,
+    Static,
+}
+
 pub struct ResolvedRect {
     pub width: f64,
     pub height: f64,
@@ -40,6 +46,7 @@ pub enum ResolvedNodeData {
 }
 
 pub struct ResolvedNode {
+    pub batch_kind: ResolvedNodeBatchKind,
     pub data: ResolvedNodeData,
     pub x: f64,
     pub y: f64,
@@ -56,4 +63,5 @@ pub struct ResolvedNode {
 pub struct ResolvedFrame {
     pub background: (u8, u8, u8),
     pub nodes: Vec<ResolvedNode>,
+    pub scene_cache_key: u64,
 }

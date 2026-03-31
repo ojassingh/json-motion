@@ -13,10 +13,18 @@ pub(crate) fn ease(p: f64, easing: Easing) -> f64 {
             }
         }
         Easing::EaseInExpo => {
-            if p == 0.0 { 0.0 } else { 2.0_f64.powf(10.0 * p - 10.0) }
+            if p == 0.0 {
+                0.0
+            } else {
+                2.0_f64.powf(10.0 * p - 10.0)
+            }
         }
         Easing::EaseOutExpo => {
-            if p == 1.0 { 1.0 } else { 1.0 - 2.0_f64.powf(-10.0 * p) }
+            if p == 1.0 {
+                1.0
+            } else {
+                1.0 - 2.0_f64.powf(-10.0 * p)
+            }
         }
         Easing::EaseInBack => {
             let c = 1.701_58;

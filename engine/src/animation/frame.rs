@@ -1,160 +1,339 @@
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use indexmap::IndexMap;
-use skia_safe::Typeface;
 
 use crate::color;
 use crate::layout;
-use crate::shared::consts::{
-    DEFAULT_FONT_SIZE,
-    DEFAULT_LINE_HEIGHT_MULT,
-    DEFAULT_SCENE_BG,
-    DEFAULT_TEXT_COLOR,
-};
-use crate::shared::types::{
-    ResolvedFrame,
-    ResolvedIcon,
-    ResolvedNode,
-    ResolvedNodeData,
-    ResolvedRect,
-    ResolvedText,
-};
 use crate::schema::{
-    IconLineCap,
-    IconLineJoin,
-    Node,
-    NodeBase,
-    SceneEntry,
-    TextAlign,
-    TimelineEvent,
+    IconLineCap, IconLineJoin, Node, NodeBase, SceneEntry, TextAlign, TimelineEvent,
     VideoDescription,
 };
+use crate::shared::consts::{
+    DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_SCENE_BG, DEFAULT_TEXT_COLOR,
+};
+use crate::shared::types::{
+    ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+    ResolvedRect, ResolvedText,
+};
+use crate::text::TextMeasurer;
 
-use super::segments::{color_at, num_at};
+use super::segments::{ColorTrack, NumTrack};
 use super::timeline::get_node_events;
 
+const NUMERIC_TRACK_PROPERTIES: [&str; 16] = [
+    "opacity",
+    "x",
+    "y",
+    "dx",
+    "dy",
+    "width",
+    "height",
+    "rotate",
+    "scale",
+    "scaleX",
+    "scaleY",
+    "skewX",
+    "skewY",
+    "cornerRadius",
+    "strokeWidth",
+    "size",
+];
+
+const COLOR_TRACK_PROPERTIES: [&str; 3] = ["fill", "stroke", "color"];
+
+#[derive(Default)]
+struct NodeTracks {
+    colors: HashMap<&'static str, ColorTrack>,
+    numeric: HashMap<&'static str, NumTrack>,
+}
+
+pub struct CompiledVideo<'a> {
+    pub(crate) background: (u8, u8, u8),
+    pub(crate) height: u32,
+    pub(crate) scenes: Vec<PrecomputedScene<'a>>,
+    pub(crate) width: u32,
+}
+
 pub struct PrecomputedScene<'a> {
-    pub(super) start_frame: u32,
-    pub(super) end_frame_exclusive: u32,
-    pub(super) fps: f64,
-    pub(super) background: (u8, u8, u8),
-    pub(super) nodes: &'a IndexMap<String, Node>,
-    pub(super) node_events: HashMap<String, Vec<TimelineEvent>>,
+    pub(crate) background: (u8, u8, u8),
+    pub(crate) cached_layout: Option<HashMap<String, (f64, f64)>>,
+    pub(crate) end_frame_exclusive: u32,
+    pub(crate) fps: f64,
+    node_tracks: HashMap<String, NodeTracks>,
+    pub(crate) nodes: &'a IndexMap<String, Node>,
+    render_batch_kinds: HashMap<String, ResolvedNodeBatchKind>,
+    pub(crate) render_cache_key: u64,
+    pub(crate) start_frame: u32,
+}
+
+impl NodeTracks {
+    fn compile(events: &[TimelineEvent]) -> Self {
+        let numeric = NUMERIC_TRACK_PROPERTIES
+            .into_iter()
+            .filter_map(|property| {
+                NumTrack::compile(events, property).map(|track| (property, track))
+            })
+            .collect();
+        let colors = COLOR_TRACK_PROPERTIES
+            .into_iter()
+            .filter_map(|property| {
+                ColorTrack::compile(events, property).map(|track| (property, track))
+            })
+            .collect();
+
+        Self { colors, numeric }
+    }
+
+    fn color(&self, property: &'static str, base: Option<&str>, t: f64) -> Option<String> {
+        self.colors
+            .get(property)
+            .map_or_else(|| base.map(str::to_string), |track| track.resolve(base, t))
+    }
+
+    fn num(&self, property: &'static str, base: f64, t: f64) -> f64 {
+        self.numeric
+            .get(property)
+            .map_or(base, |track| track.resolve(base, t))
+    }
+
+    fn has_any(&self, properties: &[&'static str]) -> bool {
+        properties
+            .iter()
+            .any(|property| self.numeric.contains_key(property) || self.colors.contains_key(property))
+    }
 }
 
 impl<'a> PrecomputedScene<'a> {
-    pub fn new(scene: &'a SceneEntry, desc: &VideoDescription) -> Result<Self, String> {
+    fn compile(
+        scene: &'a SceneEntry,
+        desc: &VideoDescription,
+        measurer: &impl TextMeasurer,
+    ) -> Result<Self, String> {
         if scene.duration == 0 {
             return Err(format!("scene {} has invalid duration 0", scene.id));
         }
+
         let end_frame_exclusive = scene
             .start_frame
             .checked_add(scene.duration)
             .ok_or_else(|| format!("scene {} frame range overflowed", scene.id))?;
-        let node_events = scene
+        let node_tracks: HashMap<String, NodeTracks> = scene
             .nodes
             .keys()
-            .map(|id| (id.clone(), get_node_events(id, &scene.timeline)))
+            .map(|id| {
+                let events = get_node_events(id, &scene.timeline);
+                (id.clone(), NodeTracks::compile(&events))
+            })
             .collect();
+        let has_layout_nodes = scene.nodes.values().any(Node::is_layout);
         let bg_hex = scene
             .background
             .as_deref()
             .or(desc.background.as_deref())
             .unwrap_or(DEFAULT_SCENE_BG);
+        let cached_layout = if scene_has_static_layout(scene) {
+            Some(layout::resolve_layout(
+                &scene.nodes,
+                desc.width as f64,
+                desc.height as f64,
+                measurer,
+            )?)
+        } else {
+            None
+        };
+        let render_batch_kinds = scene
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                if node.is_layout() {
+                    None
+                } else {
+                    let default_tracks = NodeTracks::default();
+                    let tracks = node_tracks.get(id).unwrap_or(&default_tracks);
+                    Some((
+                        id.clone(),
+                        classify_render_batch_kind(
+                            node,
+                            tracks,
+                            has_layout_nodes,
+                            cached_layout.is_some(),
+                        ),
+                    ))
+                }
+            })
+            .collect();
 
         Ok(Self {
-            start_frame: scene.start_frame,
+            background: color::parse_hex(bg_hex),
+            cached_layout,
             end_frame_exclusive,
             fps: desc.fps,
-            background: color::parse_hex(bg_hex),
+            node_tracks,
             nodes: &scene.nodes,
-            node_events,
+            render_batch_kinds,
+            render_cache_key: compute_scene_render_cache_key(scene),
+            start_frame: scene.start_frame,
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn has_static_layout(&self) -> bool {
+        self.cached_layout.is_some()
+    }
+}
+
+pub fn compile_video<'a>(
+    desc: &'a VideoDescription,
+    measurer: &impl TextMeasurer,
+) -> Result<CompiledVideo<'a>, String> {
+    let scenes = desc
+        .scenes
+        .iter()
+        .map(|scene| PrecomputedScene::compile(scene, desc, measurer))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(CompiledVideo {
+        background: color::parse_hex(desc.background.as_deref().unwrap_or(DEFAULT_SCENE_BG)),
+        height: desc.height,
+        scenes,
+        width: desc.width,
+    })
+}
+
+fn scene_has_static_layout(scene: &SceneEntry) -> bool {
+    !scene.timeline.iter().any(event_affects_layout)
+}
+
+fn compute_scene_render_cache_key(scene: &SceneEntry) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    scene.id.hash(&mut hasher);
+    scene.start_frame.hash(&mut hasher);
+    scene.duration.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn event_affects_layout(event: &TimelineEvent) -> bool {
+    event.x.is_some()
+        || event.y.is_some()
+        || event.dx.is_some()
+        || event.dy.is_some()
+        || event.width.is_some()
+        || event.height.is_some()
+        || event.size.is_some()
+}
+
+fn classify_render_batch_kind(
+    node: &Node,
+    tracks: &NodeTracks,
+    has_layout_nodes: bool,
+    has_static_layout: bool,
+) -> ResolvedNodeBatchKind {
+    if has_layout_nodes && !has_static_layout {
+        return ResolvedNodeBatchKind::Dynamic;
+    }
+
+    const BASE_DYNAMIC_PROPS: [&str; 10] = [
+        "opacity", "x", "y", "dx", "dy", "rotate", "scaleX", "scaleY", "skewX", "skewY",
+    ];
+    if tracks.has_any(&BASE_DYNAMIC_PROPS) {
+        return ResolvedNodeBatchKind::Dynamic;
+    }
+
+    let node_dynamic_props: &[&str] = match node {
+        Node::Icon(_) => &["width", "height", "strokeWidth", "fill", "stroke"],
+        Node::Rect(_) => &["width", "height", "cornerRadius", "strokeWidth", "fill", "stroke"],
+        Node::Text(_) => &["size", "color"],
+        _ => &[],
+    };
+
+    if tracks.has_any(node_dynamic_props) {
+        ResolvedNodeBatchKind::Dynamic
+    } else {
+        ResolvedNodeBatchKind::Static
+    }
+}
+
+fn scene_for_frame<'a>(
+    compiled: &'a CompiledVideo<'a>,
+    absolute_frame: u32,
+) -> Option<&'a PrecomputedScene<'a>> {
+    let idx = compiled
+        .scenes
+        .partition_point(|scene| scene.end_frame_exclusive <= absolute_frame);
+    compiled
+        .scenes
+        .get(idx)
+        .filter(|scene| absolute_frame >= scene.start_frame)
 }
 
 fn snapshot_nodes(
     nodes: &IndexMap<String, Node>,
-    node_events: &HashMap<String, Vec<TimelineEvent>>,
+    node_tracks: &HashMap<String, NodeTracks>,
     t: f64,
 ) -> IndexMap<String, Node> {
     let mut snapshot = nodes.clone();
 
     for (id, node) in &mut snapshot {
-        let events = node_events.get(id).map(Vec::as_slice).unwrap_or(&[]);
-        apply_base(node, events, t);
-        apply_node_data(node, events, t);
+        let default_tracks = NodeTracks::default();
+        let tracks = node_tracks.get(id).unwrap_or(&default_tracks);
+        apply_base(node, tracks, t);
+        apply_node_data(node, tracks, t);
     }
 
     snapshot
 }
 
-fn apply_base(node: &mut Node, events: &[TimelineEvent], t: f64) {
+fn apply_base(node: &mut Node, tracks: &NodeTracks, t: f64) {
     let base = base_mut(node);
-    let x = num_at(events, "x", base.x.unwrap_or(0.0), t);
-    let y = num_at(events, "y", base.y.unwrap_or(0.0), t);
-    base.x = Some(x + num_at(events, "dx", 0.0, t));
-    base.y = Some(y + num_at(events, "dy", 0.0, t));
-    base.opacity = Some(num_at(events, "opacity", base.opacity.unwrap_or(1.0), t));
-    base.rotate = Some(num_at(events, "rotate", base.rotate.unwrap_or(0.0), t));
-    base.scale_x = Some(num_at(
-        events,
+    let x = tracks.num("x", base.x.unwrap_or(0.0), t);
+    let y = tracks.num("y", base.y.unwrap_or(0.0), t);
+    base.x = Some(x + tracks.num("dx", 0.0, t));
+    base.y = Some(y + tracks.num("dy", 0.0, t));
+    base.opacity = Some(tracks.num("opacity", base.opacity.unwrap_or(1.0), t));
+    base.rotate = Some(tracks.num("rotate", base.rotate.unwrap_or(0.0), t));
+    base.scale_x = Some(tracks.num(
         "scaleX",
         base.scale_x.unwrap_or(base.scale.unwrap_or(1.0)),
         t,
     ));
-    base.scale_y = Some(num_at(
-        events,
+    base.scale_y = Some(tracks.num(
         "scaleY",
         base.scale_y.unwrap_or(base.scale.unwrap_or(1.0)),
         t,
     ));
-    base.skew_x = Some(num_at(events, "skewX", base.skew_x.unwrap_or(0.0), t));
-    base.skew_y = Some(num_at(events, "skewY", base.skew_y.unwrap_or(0.0), t));
+    base.skew_x = Some(tracks.num("skewX", base.skew_x.unwrap_or(0.0), t));
+    base.skew_y = Some(tracks.num("skewY", base.skew_y.unwrap_or(0.0), t));
 }
 
-fn apply_node_data(node: &mut Node, events: &[TimelineEvent], t: f64) {
+fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
     match node {
         Node::Icon(icon) => {
-            icon.width = num_at(events, "width", icon.width, t);
-            icon.height = num_at(events, "height", icon.height, t);
-            icon.fill = color_at(events, "fill", icon.fill.as_deref(), t);
-            icon.stroke = color_at(
-                events,
+            icon.width = tracks.num("width", icon.width, t);
+            icon.height = tracks.num("height", icon.height, t);
+            icon.fill = tracks.color("fill", icon.fill.as_deref(), t);
+            icon.stroke = tracks.color(
                 "stroke",
                 Some(icon.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
                 t,
             );
-            icon.stroke_width = Some(num_at(
-                events,
-                "strokeWidth",
-                icon.stroke_width.unwrap_or(2.0),
-                t,
-            ));
+            icon.stroke_width =
+                Some(tracks.num("strokeWidth", icon.stroke_width.unwrap_or(2.0), t));
         }
         Node::Rect(rect) => {
-            rect.width = num_at(events, "width", rect.width, t);
-            rect.height = num_at(events, "height", rect.height, t);
-            rect.fill = color_at(events, "fill", rect.fill.as_deref(), t);
-            rect.stroke = color_at(events, "stroke", rect.stroke.as_deref(), t);
-            rect.stroke_width = Some(num_at(
-                events,
-                "strokeWidth",
-                rect.stroke_width.unwrap_or(0.0),
-                t,
-            ));
-            rect.corner_radius = Some(num_at(
-                events,
-                "cornerRadius",
-                rect.corner_radius.unwrap_or(0.0),
-                t,
-            ));
+            rect.width = tracks.num("width", rect.width, t);
+            rect.height = tracks.num("height", rect.height, t);
+            rect.fill = tracks.color("fill", rect.fill.as_deref(), t);
+            rect.stroke = tracks.color("stroke", rect.stroke.as_deref(), t);
+            rect.stroke_width =
+                Some(tracks.num("strokeWidth", rect.stroke_width.unwrap_or(0.0), t));
+            rect.corner_radius =
+                Some(tracks.num("cornerRadius", rect.corner_radius.unwrap_or(0.0), t));
         }
         Node::Text(text) => {
-            let font_size = num_at(events, "size", text.size.unwrap_or(DEFAULT_FONT_SIZE), t);
+            let font_size = tracks.num("size", text.size.unwrap_or(DEFAULT_FONT_SIZE), t);
             text.size = Some(font_size);
-            text.color = color_at(
-                events,
+            text.color = tracks.color(
                 "color",
                 Some(text.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
                 t,
@@ -175,107 +354,175 @@ fn base_mut(node: &mut Node) -> &mut NodeBase {
     }
 }
 
-fn resolve_node(node: &Node, layout_pos: (f64, f64), source_index: usize) -> Option<ResolvedNode> {
-    let base = node.base();
+fn resolve_common(
+    base: &NodeBase,
+    batch_kind: ResolvedNodeBatchKind,
+    tracks: &NodeTracks,
+    layout_pos: (f64, f64),
+    source_index: usize,
+    t: f64,
+    data: ResolvedNodeData,
+) -> ResolvedNode {
     let scale = base.scale.unwrap_or(1.0);
-    let common = |data: ResolvedNodeData| ResolvedNode {
+    ResolvedNode {
+        batch_kind,
         data,
+        opacity: tracks.num("opacity", base.opacity.unwrap_or(1.0), t),
+        rotation: tracks.num("rotate", base.rotate.unwrap_or(0.0), t),
+        scale_x: tracks.num("scaleX", base.scale_x.unwrap_or(scale), t),
+        scale_y: tracks.num("scaleY", base.scale_y.unwrap_or(scale), t),
+        skew_x: tracks.num("skewX", base.skew_x.unwrap_or(0.0), t),
+        skew_y: tracks.num("skewY", base.skew_y.unwrap_or(0.0), t),
+        source_index,
         x: layout_pos.0,
         y: layout_pos.1,
-        opacity: base.opacity.unwrap_or(1.0),
-        rotation: base.rotate.unwrap_or(0.0),
-        scale_x: base.scale_x.unwrap_or(scale),
-        scale_y: base.scale_y.unwrap_or(scale),
-        skew_x: base.skew_x.unwrap_or(0.0),
-        skew_y: base.skew_y.unwrap_or(0.0),
         z_index: base.z_index.unwrap_or(0),
-        source_index,
-    };
+    }
+}
 
+fn resolve_node(
+    node: &Node,
+    batch_kind: ResolvedNodeBatchKind,
+    tracks: &NodeTracks,
+    layout_pos: (f64, f64),
+    source_index: usize,
+    t: f64,
+) -> Option<ResolvedNode> {
     match node {
         Node::Icon(icon) => {
-            let stroke_hex = icon
-                .stroke
-                .as_deref()
-                .unwrap_or(DEFAULT_TEXT_COLOR);
-            Some(common(ResolvedNodeData::Icon(ResolvedIcon {
-                width: icon.width,
-                height: icon.height,
-                viewport_width: icon.viewport_width.unwrap_or(24.0),
-                viewport_height: icon.viewport_height.unwrap_or(24.0),
-                stroke: color::parse_hex(stroke_hex),
-                fill: icon.fill.as_deref().map(color::parse_hex),
-                stroke_width: icon.stroke_width.unwrap_or(2.0),
-                absolute_stroke_width: icon.absolute_stroke_width.unwrap_or(false),
-                line_cap: icon.line_cap.unwrap_or(IconLineCap::Round),
-                line_join: icon.line_join.unwrap_or(IconLineJoin::Round),
-                elements: icon.elements.clone(),
-            })))
+            let stroke_hex = tracks
+                .color(
+                    "stroke",
+                    Some(icon.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+                    t,
+                )
+                .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
+            Some(resolve_common(
+                &icon.base,
+                batch_kind,
+                tracks,
+                layout_pos,
+                source_index,
+                t,
+                ResolvedNodeData::Icon(ResolvedIcon {
+                    width: tracks.num("width", icon.width, t),
+                    height: tracks.num("height", icon.height, t),
+                    viewport_width: icon.viewport_width.unwrap_or(24.0),
+                    viewport_height: icon.viewport_height.unwrap_or(24.0),
+                    stroke: color::parse_hex(&stroke_hex),
+                    fill: tracks
+                        .color("fill", icon.fill.as_deref(), t)
+                        .as_deref()
+                        .map(color::parse_hex),
+                    stroke_width: tracks.num("strokeWidth", icon.stroke_width.unwrap_or(2.0), t),
+                    absolute_stroke_width: icon.absolute_stroke_width.unwrap_or(false),
+                    line_cap: icon.line_cap.unwrap_or(IconLineCap::Round),
+                    line_join: icon.line_join.unwrap_or(IconLineJoin::Round),
+                    elements: icon.elements.clone(),
+                }),
+            ))
         }
-        Node::Rect(rect) => Some(common(ResolvedNodeData::Rect(ResolvedRect {
-            width: rect.width,
-            height: rect.height,
-            fill: rect.fill.as_deref().map(color::parse_hex),
-            stroke: rect.stroke.as_deref().map(color::parse_hex),
-            stroke_width: rect.stroke_width.unwrap_or(0.0),
-            corner_radius: rect.corner_radius.unwrap_or(0.0),
-        }))),
+        Node::Rect(rect) => Some(resolve_common(
+            &rect.base,
+            batch_kind,
+            tracks,
+            layout_pos,
+            source_index,
+            t,
+            ResolvedNodeData::Rect(ResolvedRect {
+                width: tracks.num("width", rect.width, t),
+                height: tracks.num("height", rect.height, t),
+                fill: tracks
+                    .color("fill", rect.fill.as_deref(), t)
+                    .as_deref()
+                    .map(color::parse_hex),
+                stroke: tracks
+                    .color("stroke", rect.stroke.as_deref(), t)
+                    .as_deref()
+                    .map(color::parse_hex),
+                stroke_width: tracks.num("strokeWidth", rect.stroke_width.unwrap_or(0.0), t),
+                corner_radius: tracks.num("cornerRadius", rect.corner_radius.unwrap_or(0.0), t),
+            }),
+        )),
         Node::Text(text) => {
-            let font_size = text.size.unwrap_or(DEFAULT_FONT_SIZE);
-            let color_hex = text
-                .color
-                .as_deref()
-                .unwrap_or(DEFAULT_TEXT_COLOR);
-            Some(common(ResolvedNodeData::Text(ResolvedText {
-                text: text.text.clone(),
-                color: color::parse_hex(color_hex),
-                font_family: text.font_family.clone(),
-                font_size,
-                line_height: text
-                    .line_height
-                    .unwrap_or(font_size * DEFAULT_LINE_HEIGHT_MULT),
-                max_width: text.max_width,
-                text_align: text.text_align.unwrap_or(TextAlign::Left),
-            })))
+            let font_size = tracks.num("size", text.size.unwrap_or(DEFAULT_FONT_SIZE), t);
+            let color_hex = tracks
+                .color(
+                    "color",
+                    Some(text.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+                    t,
+                )
+                .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
+            Some(resolve_common(
+                &text.base,
+                batch_kind,
+                tracks,
+                layout_pos,
+                source_index,
+                t,
+                ResolvedNodeData::Text(ResolvedText {
+                    text: text.text.clone(),
+                    color: color::parse_hex(&color_hex),
+                    font_family: text.font_family.clone(),
+                    font_size,
+                    line_height: text
+                        .line_height
+                        .unwrap_or(font_size * DEFAULT_LINE_HEIGHT_MULT),
+                    max_width: text.max_width,
+                    text_align: text.text_align.unwrap_or(TextAlign::Left),
+                }),
+            ))
         }
         _ => None,
     }
 }
 
 pub fn resolve_frame_fast(
-    desc: &VideoDescription,
+    compiled: &CompiledVideo<'_>,
     absolute_frame: u32,
-    scenes: &[PrecomputedScene<'_>],
-    default_typeface: Option<&Typeface>,
+    measurer: &impl TextMeasurer,
 ) -> Result<ResolvedFrame, String> {
-    let Some(precomp) = scenes
-        .iter()
-        .find(|s| absolute_frame >= s.start_frame && absolute_frame < s.end_frame_exclusive)
-    else {
+    let Some(scene) = scene_for_frame(compiled, absolute_frame) else {
         return Ok(ResolvedFrame {
-            background: color::parse_hex(
-                desc.background.as_deref().unwrap_or(DEFAULT_SCENE_BG),
-            ),
+            background: compiled.background,
             nodes: vec![],
+            scene_cache_key: 0,
         });
     };
 
-    let t = (absolute_frame - precomp.start_frame) as f64 / precomp.fps;
-    let snapshot = snapshot_nodes(precomp.nodes, &precomp.node_events, t);
-    let layout = layout::resolve_layout(
-        &snapshot,
-        desc.width as f64,
-        desc.height as f64,
-        default_typeface,
-    )?;
+    let t = (absolute_frame - scene.start_frame) as f64 / scene.fps;
+    let layout_positions = if let Some(layout) = &scene.cached_layout {
+        layout.clone()
+    } else {
+        let snapshot = snapshot_nodes(scene.nodes, &scene.node_tracks, t);
+        layout::resolve_layout(
+            &snapshot,
+            compiled.width as f64,
+            compiled.height as f64,
+            measurer,
+        )?
+    };
 
-    let mut nodes = Vec::with_capacity(snapshot.len());
-    for (source_index, (id, node)) in snapshot.iter().enumerate() {
-        let pos = layout
+    let source_nodes = if scene.cached_layout.is_some() {
+        None
+    } else {
+        Some(snapshot_nodes(scene.nodes, &scene.node_tracks, t))
+    };
+    let nodes_ref = source_nodes.as_ref().unwrap_or(scene.nodes);
+
+    let mut nodes = Vec::with_capacity(nodes_ref.len());
+    for (source_index, (id, node)) in nodes_ref.iter().enumerate() {
+        let pos = layout_positions
             .get(id)
             .copied()
             .ok_or_else(|| format!("missing layout position for node {id}"))?;
-        if let Some(resolved) = resolve_node(node, pos, source_index) {
+        let default_tracks = NodeTracks::default();
+        let tracks = scene.node_tracks.get(id).unwrap_or(&default_tracks);
+        let batch_kind = *scene
+            .render_batch_kinds
+            .get(id)
+            .unwrap_or(&ResolvedNodeBatchKind::Dynamic);
+        if let Some(resolved) = resolve_node(node, batch_kind, tracks, pos, source_index, t) {
             nodes.push(resolved);
         }
     }
@@ -287,7 +534,8 @@ pub fn resolve_frame_fast(
     });
 
     Ok(ResolvedFrame {
-        background: precomp.background,
+        background: scene.background,
         nodes,
+        scene_cache_key: scene.render_cache_key,
     })
 }
