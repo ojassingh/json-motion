@@ -1,15 +1,11 @@
+use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive};
+use crate::shared::types::{ResolvedIcon, ResolvedNode};
 use bytemuck::{Pod, Zeroable};
 use lyon::extra::parser::ParserOptions;
 use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillTessellator, FillVertexConstructor,
-    StrokeOptions, StrokeTessellator, StrokeVertexConstructor, VertexBuffers,
+    BuffersBuilder, FillOptions, FillTessellator, FillVertexConstructor, StrokeOptions,
+    StrokeTessellator, StrokeVertexConstructor, VertexBuffers,
 };
-use wgpu::util::DeviceExt;
-
-use crate::schema::{
-    IconLineCap, IconLineJoin, IconPrimitive,
-};
-use crate::shared::types::{ResolvedIcon, ResolvedNode};
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -51,6 +47,7 @@ impl PathPipeline {
     pub fn new(
         device: &wgpu::Device,
         framebuffer_format: wgpu::TextureFormat,
+        sample_count: u32,
         globals_layout: &Option<&wgpu::BindGroupLayout>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -103,7 +100,10 @@ impl PathPipeline {
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                ..Default::default()
+            },
             multiview_mask: None,
             cache: None,
         });
@@ -112,10 +112,7 @@ impl PathPipeline {
     }
 }
 
-pub fn tessellate_icon(
-    node: &ResolvedNode,
-    icon: &ResolvedIcon,
-) -> (Vec<PathVertex>, Vec<u32>) {
+pub fn tessellate_icon(icon: &ResolvedIcon) -> (Vec<PathVertex>, Vec<u32>) {
     let width = icon.width as f32;
     let height = icon.height as f32;
     let vw = icon.viewport_width.max(f64::EPSILON) as f32;
@@ -129,25 +126,8 @@ pub fn tessellate_icon(
         icon.stroke_width as f32
     };
 
-    let opacity = node.opacity.clamp(0.0, 1.0) as f32;
-
-    let angle = (node.rotation as f32).to_radians();
-    let cos_a = angle.cos();
-    let sin_a = angle.sin();
-    let nsx = node.scale_x as f32;
-    let nsy = node.scale_y as f32;
-    let skew_x_tan = (node.skew_x as f32).to_radians().tan();
-    let skew_y_tan = (node.skew_y as f32).to_radians().tan();
-
-    let m00 = cos_a * nsx - sin_a * nsy * skew_y_tan;
-    let m01 = cos_a * nsx * skew_x_tan - sin_a * nsy;
-    let m10 = sin_a * nsx + cos_a * nsy * skew_y_tan;
-    let m11 = sin_a * nsx * skew_x_tan + cos_a * nsy;
-
     let cx = width / 2.0;
     let cy = height / 2.0;
-    let tx = node.x as f32 + cx;
-    let ty = node.y as f32 + cy;
 
     let mut geometry: VertexBuffers<PathVertex, u32> = VertexBuffers::new();
     let mut fill_tess = FillTessellator::new();
@@ -160,11 +140,11 @@ pub fn tessellate_icon(
 
     let stroke_color = {
         let (r, g, b) = icon.stroke;
-        [r as f32 / 255.0 * opacity, g as f32 / 255.0 * opacity, b as f32 / 255.0 * opacity, opacity]
+        [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
     };
-    let fill_color = icon.fill.map(|(r, g, b)| {
-        [r as f32 / 255.0 * opacity, g as f32 / 255.0 * opacity, b as f32 / 255.0 * opacity, opacity]
-    });
+    let fill_color = icon
+        .fill
+        .map(|(r, g, b)| [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]);
 
     for element in &icon.elements {
         let svg_d = primitive_to_svg(element);
@@ -183,25 +163,85 @@ pub fn tessellate_icon(
             let _ = fill_tess.tessellate_path(
                 &lyon_path,
                 &FillOptions::default(),
-                &mut BuffersBuilder::new(&mut geometry, VertexCtor { color: fc, offset: [0.0, 0.0] }),
+                &mut BuffersBuilder::new(
+                    &mut geometry,
+                    VertexCtor {
+                        color: fc,
+                        offset: [0.0, 0.0],
+                    },
+                ),
             );
         }
 
         let _ = stroke_tess.tessellate_path(
             &lyon_path,
             &stroke_opts,
-            &mut BuffersBuilder::new(&mut geometry, VertexCtor { color: stroke_color, offset: [0.0, 0.0] }),
+            &mut BuffersBuilder::new(
+                &mut geometry,
+                VertexCtor {
+                    color: stroke_color,
+                    offset: [0.0, 0.0],
+                },
+            ),
         );
     }
 
-    for v in &mut geometry.vertices {
-        let lx = v.position[0] * sx - cx;
-        let ly = v.position[1] * sy - cy;
-        v.position[0] = m00 * lx + m01 * ly + tx;
-        v.position[1] = m10 * lx + m11 * ly + ty;
+    for vertex in &mut geometry.vertices {
+        vertex.position[0] = vertex.position[0] * sx - cx;
+        vertex.position[1] = vertex.position[1] * sy - cy;
     }
 
     (geometry.vertices, geometry.indices)
+}
+
+pub fn append_transformed_icon(
+    node: &ResolvedNode,
+    icon: &ResolvedIcon,
+    vertices: &[PathVertex],
+    indices: &[u32],
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    if vertices.is_empty() || indices.is_empty() {
+        return;
+    }
+
+    let angle = (node.rotation as f32).to_radians();
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    let sx = node.scale_x as f32;
+    let sy = node.scale_y as f32;
+    let skew_x_tan = (node.skew_x as f32).to_radians().tan();
+    let skew_y_tan = (node.skew_y as f32).to_radians().tan();
+
+    let m00 = cos_a * sx - sin_a * sy * skew_y_tan;
+    let m01 = cos_a * sx * skew_x_tan - sin_a * sy;
+    let m10 = sin_a * sx + cos_a * sy * skew_y_tan;
+    let m11 = sin_a * sx * skew_x_tan + cos_a * sy;
+    let tx = node.x as f32 + icon.width as f32 / 2.0;
+    let ty = node.y as f32 + icon.height as f32 / 2.0;
+    let opacity = node.opacity.clamp(0.0, 1.0) as f32;
+    let base = out_vertices.len() as u32;
+
+    out_vertices.reserve(vertices.len());
+    out_indices.reserve(indices.len());
+
+    for vertex in vertices {
+        out_vertices.push(PathVertex {
+            position: [
+                m00 * vertex.position[0] + m01 * vertex.position[1] + tx,
+                m10 * vertex.position[0] + m11 * vertex.position[1] + ty,
+            ],
+            color: [
+                vertex.color[0] * opacity,
+                vertex.color[1] * opacity,
+                vertex.color[2] * opacity,
+                opacity,
+            ],
+        });
+    }
+
+    out_indices.extend(indices.iter().map(|index| index + base));
 }
 
 pub struct PathBatch;
@@ -210,7 +250,8 @@ impl PathBatch {
     pub fn draw<'rp>(
         pipeline: &'rp PathPipeline,
         pass: &mut wgpu::RenderPass<'rp>,
-        device: &wgpu::Device,
+        vertex_buffer: &'rp wgpu::Buffer,
+        index_buffer: &'rp wgpu::Buffer,
         vertices: &[PathVertex],
         indices: &[u32],
     ) {
@@ -218,20 +259,9 @@ impl PathBatch {
             return;
         }
 
-        let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("path_vbuf"),
-            contents: bytemuck::cast_slice(vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let ibuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("path_ibuf"),
-            contents: bytemuck::cast_slice(indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
         pass.set_pipeline(&pipeline.pipeline);
-        pass.set_vertex_buffer(0, vbuf.slice(..));
-        pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
     }
 }
@@ -243,7 +273,10 @@ fn primitive_to_svg(prim: &IconPrimitive) -> Option<String> {
             let r = c.r;
             Some(format!(
                 "M{},{} a{r},{r} 0 1,0 {},0 a{r},{r} 0 1,0 {},0",
-                c.cx - r, c.cy, r * 2.0, -(r * 2.0)
+                c.cx - r,
+                c.cy,
+                r * 2.0,
+                -(r * 2.0)
             ))
         }
         IconPrimitive::Line(l) => Some(format!("M{} {} L{} {}", l.x1, l.y1, l.x2, l.y2)),
@@ -254,7 +287,10 @@ fn primitive_to_svg(prim: &IconPrimitive) -> Option<String> {
             let y = r.y.unwrap_or(0.0);
             Some(format!(
                 "M{x},{y} L{},{y} L{},{} L{x},{} Z",
-                x + r.width, x + r.width, y + r.height, y + r.height
+                x + r.width,
+                x + r.width,
+                y + r.height,
+                y + r.height
             ))
         }
     }

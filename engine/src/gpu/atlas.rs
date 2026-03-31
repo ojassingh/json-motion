@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use skia_safe::{
-    surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Paint, TextBlob, paint,
-};
+use skia_safe::{paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Paint, TextBlob};
 
 use crate::schema::TextAlign;
 use crate::shared::types::{ResolvedNode, ResolvedText};
 use crate::text::{self, TextMeasurer};
 
+#[derive(Clone)]
 pub struct GlyphRegion {
     pub x: u32,
     pub y: u32,
@@ -15,15 +14,17 @@ pub struct GlyphRegion {
     pub h: u32,
 }
 
+#[derive(Clone)]
 pub struct TextLineEntry {
     pub region: GlyphRegion,
-    pub world_x: f32,
-    pub world_y: f32,
+    pub local_x: f32,
+    pub local_y: f32,
 }
 
+#[derive(Clone)]
 pub struct TextNodeEntry {
     pub lines: Vec<TextLineEntry>,
-    pub node_idx: usize,
+    pub source_index: usize,
 }
 
 pub struct AtlasBuild {
@@ -37,7 +38,7 @@ const ATLAS_MAX_WIDTH: u32 = 4096;
 const PADDING: u32 = 2;
 
 pub fn build_text_atlas(
-    nodes: &[(usize, &ResolvedNode, &ResolvedText)],
+    nodes: &[(&ResolvedNode, &ResolvedText)],
     measurer: &dyn TextMeasurer,
 ) -> Option<AtlasBuild> {
     if nodes.is_empty() {
@@ -46,12 +47,10 @@ pub fn build_text_atlas(
 
     let mut line_rasters: Vec<LineRaster> = Vec::new();
 
-    for &(node_idx, node, text) in nodes {
+    for &(node, text) in nodes {
         let measured = measurer.measure_resolved_text(text);
-        let typeface = text::resolve_typeface(
-            text.font_family.as_deref(),
-            measurer.default_typeface(),
-        );
+        let typeface =
+            text::resolve_typeface(text.font_family.as_deref(), measurer.default_typeface());
         let Some(typeface) = typeface else { continue };
 
         let font = Font::from_typeface(typeface, text.font_size as f32);
@@ -62,14 +61,11 @@ pub fn build_text_atlas(
                 continue;
             }
             let metrics = &measured.lines[line_idx];
-            let baseline_y =
-                measured.baseline_offset + line_idx as f32 * text.line_height as f32;
+            let baseline_y = measured.baseline_offset + line_idx as f32 * text.line_height as f32;
 
             let line_x = match text.text_align {
                 TextAlign::Left => -metrics.left,
-                TextAlign::Center => {
-                    (container_width - metrics.width) / 2.0 - metrics.left
-                }
+                TextAlign::Center => (container_width - metrics.width) / 2.0 - metrics.left,
                 TextAlign::Right => container_width - metrics.width - metrics.left,
             }
             .round();
@@ -94,14 +90,14 @@ pub fn build_text_atlas(
             let draw_y = -bounds_top + 1.0;
 
             line_rasters.push(LineRaster {
-                node_idx,
+                source_index: node.source_index,
                 blob,
                 w,
                 h,
                 draw_x,
                 draw_y,
-                world_x: node.x as f32 + line_x,
-                world_y: node.y as f32 + baseline_y + bounds_top - 1.0,
+                local_x: line_x,
+                local_y: baseline_y + bounds_top - 1.0,
             });
         }
     }
@@ -131,10 +127,14 @@ pub fn build_text_atlas(
 
     for (i, lr) in line_rasters.iter().enumerate() {
         let (px, py) = placements[i];
-        canvas.draw_text_blob(&lr.blob, (px as f32 + lr.draw_x, py as f32 + lr.draw_y), &paint);
+        canvas.draw_text_blob(
+            &lr.blob,
+            (px as f32 + lr.draw_x, py as f32 + lr.draw_y),
+            &paint,
+        );
 
         entries_map
-            .entry(lr.node_idx)
+            .entry(lr.source_index)
             .or_default()
             .push(TextLineEntry {
                 region: GlyphRegion {
@@ -143,8 +143,8 @@ pub fn build_text_atlas(
                     w: lr.w,
                     h: lr.h,
                 },
-                world_x: lr.world_x,
-                world_y: lr.world_y,
+                local_x: lr.local_x,
+                local_y: lr.local_y,
             });
     }
 
@@ -160,7 +160,10 @@ pub fn build_text_atlas(
 
     let entries: Vec<TextNodeEntry> = entries_map
         .into_iter()
-        .map(|(node_idx, lines)| TextNodeEntry { node_idx, lines })
+        .map(|(source_index, lines)| TextNodeEntry {
+            source_index,
+            lines,
+        })
         .collect();
 
     Some(AtlasBuild {
@@ -172,14 +175,14 @@ pub fn build_text_atlas(
 }
 
 struct LineRaster {
-    node_idx: usize,
+    source_index: usize,
     blob: TextBlob,
     w: u32,
     h: u32,
     draw_x: f32,
     draw_y: f32,
-    world_x: f32,
-    world_y: f32,
+    local_x: f32,
+    local_y: f32,
 }
 
 fn pack_rects(rasters: &[LineRaster]) -> (u32, u32, Vec<(u32, u32)>) {

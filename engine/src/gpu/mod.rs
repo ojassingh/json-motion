@@ -4,6 +4,9 @@ mod readback;
 mod rect;
 mod text_pipeline;
 
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
@@ -18,6 +21,7 @@ use text_pipeline::{TextBatch, TextInstance, TextPipeline};
 
 /// RGBA8 linear — same channel order as ffmpeg's `Pixel::RGBA`.
 const FRAMEBUFFER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const MSAA_SAMPLE_COUNT: u32 = 4;
 
 // ── Globals uniform ───────────────────────────────────────────────────────────
 
@@ -26,6 +30,64 @@ const FRAMEBUFFER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 struct Globals {
     canvas_size: [f32; 2],
     _pad: [f32; 2],
+}
+
+struct ReusableBuffer {
+    buffer: Option<wgpu::Buffer>,
+    capacity_bytes: usize,
+    label: &'static str,
+    usage: wgpu::BufferUsages,
+}
+
+impl ReusableBuffer {
+    fn new(label: &'static str, usage: wgpu::BufferUsages) -> Self {
+        Self {
+            buffer: None,
+            capacity_bytes: 0,
+            label,
+            usage,
+        }
+    }
+
+    fn write<T: Pod>(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, data: &[T]) {
+        if data.is_empty() {
+            return;
+        }
+
+        let bytes = bytemuck::cast_slice(data);
+        let required_bytes = bytes.len();
+        if self.capacity_bytes < required_bytes {
+            self.capacity_bytes = required_bytes.next_power_of_two().max(256);
+            self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(self.label),
+                size: self.capacity_bytes as u64,
+                usage: self.usage | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+
+        if let Some(buffer) = self.buffer.as_ref() {
+            queue.write_buffer(buffer, 0, bytes);
+        }
+    }
+
+    fn get(&self) -> Option<&wgpu::Buffer> {
+        self.buffer.as_ref()
+    }
+}
+
+struct TextAtlasCache {
+    bind_group: wgpu::BindGroup,
+    entries: Vec<atlas::TextNodeEntry>,
+    height: u32,
+    key: u64,
+    _texture: wgpu::Texture,
+    width: u32,
+}
+
+struct CachedPathGeometry {
+    indices: Vec<u32>,
+    vertices: Vec<PathVertex>,
 }
 
 // ── WgpuBackend ───────────────────────────────────────────────────────────────
@@ -41,6 +103,8 @@ pub struct WgpuBackend {
     queue: wgpu::Queue,
     framebuffer: wgpu::Texture,
     framebuffer_view: wgpu::TextureView,
+    msaa_framebuffer: wgpu::Texture,
+    msaa_framebuffer_view: wgpu::TextureView,
     readback: ReadbackBuffer,
     rect_pipeline: RectPipeline,
     text_pipeline: TextPipeline,
@@ -50,6 +114,12 @@ pub struct WgpuBackend {
     globals_bind_group: wgpu::BindGroup,
     fb_width: u32,
     fb_height: u32,
+    rect_instances: ReusableBuffer,
+    text_instances: ReusableBuffer,
+    path_vertices: ReusableBuffer,
+    path_indices: ReusableBuffer,
+    text_atlas_cache: Option<TextAtlasCache>,
+    path_cache: HashMap<u64, CachedPathGeometry>,
 }
 
 impl WgpuBackend {
@@ -64,41 +134,36 @@ impl WgpuBackend {
             display: None,
         });
 
-        let adapter = pollster::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            },
-        ))
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        }))
         .map_err(|e| format!("no suitable GPU adapter found: {e}"))?;
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("engine"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                memory_hints: Default::default(),
-                trace: wgpu::Trace::Off,
-            },
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("engine"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            memory_hints: Default::default(),
+            trace: wgpu::Trace::Off,
+        }))
         .map_err(|e| format!("failed to create wgpu device: {e}"))?;
 
-        let globals_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("globals_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("globals_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
         // wgpu 29: bind_group_layouts takes &[Option<&BindGroupLayout>]
         let globals_layout_opt = Some(&globals_layout);
 
@@ -121,12 +186,24 @@ impl WgpuBackend {
             }],
         });
 
-        let rect_pipeline =
-            RectPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
-        let text_pipeline =
-            TextPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
-        let path_pipeline =
-            PathPipeline::new(&device, FRAMEBUFFER_FORMAT, &globals_layout_opt);
+        let rect_pipeline = RectPipeline::new(
+            &device,
+            FRAMEBUFFER_FORMAT,
+            MSAA_SAMPLE_COUNT,
+            &globals_layout_opt,
+        );
+        let text_pipeline = TextPipeline::new(
+            &device,
+            FRAMEBUFFER_FORMAT,
+            MSAA_SAMPLE_COUNT,
+            &globals_layout_opt,
+        );
+        let path_pipeline = PathPipeline::new(
+            &device,
+            FRAMEBUFFER_FORMAT,
+            MSAA_SAMPLE_COUNT,
+            &globals_layout_opt,
+        );
 
         let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("atlas_sampler"),
@@ -135,7 +212,8 @@ impl WgpuBackend {
             ..Default::default()
         });
 
-        let (framebuffer, framebuffer_view) = make_framebuffer(&device, width, height);
+        let (framebuffer, framebuffer_view, msaa_framebuffer, msaa_framebuffer_view) =
+            make_framebuffers(&device, width, height);
         let readback = ReadbackBuffer::new(&device, width, height);
 
         Ok(Self {
@@ -143,6 +221,8 @@ impl WgpuBackend {
             queue,
             framebuffer,
             framebuffer_view,
+            msaa_framebuffer,
+            msaa_framebuffer_view,
             readback,
             rect_pipeline,
             text_pipeline,
@@ -152,29 +232,31 @@ impl WgpuBackend {
             globals_bind_group,
             fb_width: width,
             fb_height: height,
+            rect_instances: ReusableBuffer::new("rect_instances", wgpu::BufferUsages::VERTEX),
+            text_instances: ReusableBuffer::new("text_instances", wgpu::BufferUsages::VERTEX),
+            path_vertices: ReusableBuffer::new("path_vbuf", wgpu::BufferUsages::VERTEX),
+            path_indices: ReusableBuffer::new("path_ibuf", wgpu::BufferUsages::INDEX),
+            text_atlas_cache: None,
+            path_cache: HashMap::new(),
         })
     }
-
-    /// Recreate dimension-dependent resources when the canvas size changes
-    /// (rare — typically never for a single video render).
     fn ensure_dims(&mut self, width: u32, height: u32) {
         if self.fb_width == width && self.fb_height == height {
             return;
         }
-        let (fb, view) = make_framebuffer(&self.device, width, height);
+        let (fb, view, msaa_fb, msaa_view) = make_framebuffers(&self.device, width, height);
         self.framebuffer = fb;
         self.framebuffer_view = view;
+        self.msaa_framebuffer = msaa_fb;
+        self.msaa_framebuffer_view = msaa_view;
         self.readback = ReadbackBuffer::new(&self.device, width, height);
 
         let globals_data = Globals {
             canvas_size: [width as f32, height as f32],
             _pad: [0.0; 2],
         };
-        self.queue.write_buffer(
-            &self.globals_buf,
-            0,
-            bytemuck::bytes_of(&globals_data),
-        );
+        self.queue
+            .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals_data));
 
         self.fb_width = width;
         self.fb_height = height;
@@ -206,13 +288,12 @@ impl WgpuBackend {
             })
             .collect();
 
-        let text_nodes: Vec<(usize, &ResolvedNode, &ResolvedText)> = frame
+        let text_nodes: Vec<(&ResolvedNode, &ResolvedText)> = frame
             .nodes
             .iter()
-            .enumerate()
-            .filter_map(|(i, node)| {
+            .filter_map(|node| {
                 if let ResolvedNodeData::Text(t) = &node.data {
-                    Some((i, node, t))
+                    Some((node, t))
                 } else {
                     None
                 }
@@ -223,71 +304,112 @@ impl WgpuBackend {
         let mut all_path_indices: Vec<u32> = Vec::new();
         for node in &frame.nodes {
             if let ResolvedNodeData::Icon(icon) = &node.data {
-                let (verts, indices) = path_pipeline::tessellate_icon(node, icon);
-                let base = all_path_verts.len() as u32;
-                all_path_verts.extend_from_slice(&verts);
-                all_path_indices.extend(indices.iter().map(|i| i + base));
+                let cache_key = hash_icon(icon);
+                let cached = self.path_cache.entry(cache_key).or_insert_with(|| {
+                    let (vertices, indices) = path_pipeline::tessellate_icon(icon);
+                    CachedPathGeometry { vertices, indices }
+                });
+                path_pipeline::append_transformed_icon(
+                    node,
+                    icon,
+                    &cached.vertices,
+                    &cached.indices,
+                    &mut all_path_verts,
+                    &mut all_path_indices,
+                );
             }
         }
 
-        let atlas_build = atlas::build_text_atlas(&text_nodes, measurer);
+        if !text_nodes.is_empty() {
+            let atlas_key = hash_text_nodes(&text_nodes);
+            let should_rebuild = self
+                .text_atlas_cache
+                .as_ref()
+                .is_none_or(|cache| cache.key != atlas_key);
 
-        let (_atlas_texture, _atlas_view, atlas_bg, text_instances) =
-            if let Some(ref ab) = atlas_build {
-                let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("glyph_atlas"),
-                    size: wgpu::Extent3d {
-                        width: ab.width,
+            if should_rebuild {
+                self.text_atlas_cache = atlas::build_text_atlas(&text_nodes, measurer).map(|ab| {
+                    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("glyph_atlas"),
+                        size: wgpu::Extent3d {
+                            width: ab.width,
+                            height: ab.height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::R8Unorm,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+                    self.queue.write_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &ab.pixels,
+                        wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(ab.width),
+                            rows_per_image: Some(ab.height),
+                        },
+                        wgpu::Extent3d {
+                            width: ab.width,
+                            height: ab.height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let bind_group = self.text_pipeline.create_atlas_bind_group(
+                        &self.device,
+                        &view,
+                        &self.atlas_sampler,
+                    );
+                    TextAtlasCache {
+                        bind_group,
+                        entries: ab.entries,
                         height: ab.height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::R8Unorm,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[],
+                        key: atlas_key,
+                        _texture: texture,
+                        width: ab.width,
+                    }
                 });
-                self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &tex,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &ab.pixels,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(ab.width),
-                        rows_per_image: Some(ab.height),
-                    },
-                    wgpu::Extent3d {
-                        width: ab.width,
-                        height: ab.height,
-                        depth_or_array_layers: 1,
-                    },
-                );
-                let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-                let bg = self.text_pipeline.create_atlas_bind_group(
-                    &self.device,
-                    &view,
-                    &self.atlas_sampler,
-                );
+            }
+        }
 
-                let aw = ab.width as f32;
-                let ah = ab.height as f32;
-                let mut instances = Vec::new();
-                for entry in &ab.entries {
-                    let node = &frame.nodes[entry.node_idx];
+        let text_node_lookup: HashMap<usize, &ResolvedNode> = text_nodes
+            .iter()
+            .map(|(node, _)| (node.source_index, *node))
+            .collect();
+        let mut text_instances = Vec::new();
+        if let Some(cache) = self.text_atlas_cache.as_ref() {
+            let atlas_width = cache.width as f32;
+            let atlas_height = cache.height as f32;
+            for entry in &cache.entries {
+                if let Some(node) = text_node_lookup.get(&entry.source_index) {
                     for line in &entry.lines {
-                        instances.push(TextInstance::from_line(node, line, aw, ah));
+                        text_instances.push(TextInstance::from_line(
+                            node,
+                            line,
+                            atlas_width,
+                            atlas_height,
+                        ));
                     }
                 }
+            }
+        }
 
-                (Some(tex), Some(view), Some(bg), instances)
-            } else {
-                (None, None, None, Vec::new())
-            };
+        self.rect_instances
+            .write(&self.device, &self.queue, &rect_instances);
+        self.text_instances
+            .write(&self.device, &self.queue, &text_instances);
+        self.path_vertices
+            .write(&self.device, &self.queue, &all_path_verts);
+        self.path_indices
+            .write(&self.device, &self.queue, &all_path_indices);
 
         let mut encoder = self
             .device
@@ -299,12 +421,12 @@ impl WgpuBackend {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("frame_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.framebuffer_view,
-                    resolve_target: None,
+                    view: &self.msaa_framebuffer_view,
+                    resolve_target: Some(&self.framebuffer_view),
                     depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(bg_color),
-                        store: wgpu::StoreOp::Store,
+                        store: wgpu::StoreOp::Discard,
                     },
                 })],
                 depth_stencil_attachment: None,
@@ -314,25 +436,34 @@ impl WgpuBackend {
             });
 
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            RectBatch::draw(&self.rect_pipeline, &mut pass, &self.device, &rect_instances);
+            if let Some(rect_buffer) = self.rect_instances.get() {
+                RectBatch::draw(&self.rect_pipeline, &mut pass, rect_buffer, &rect_instances);
+            }
 
-            if let Some(ref bg) = atlas_bg {
+            if let (Some(cache), Some(text_buffer)) =
+                (self.text_atlas_cache.as_ref(), self.text_instances.get())
+            {
                 TextBatch::draw(
                     &self.text_pipeline,
                     &mut pass,
-                    &self.device,
-                    bg,
+                    &cache.bind_group,
+                    text_buffer,
                     &text_instances,
                 );
             }
 
-            PathBatch::draw(
-                &self.path_pipeline,
-                &mut pass,
-                &self.device,
-                &all_path_verts,
-                &all_path_indices,
-            );
+            if let (Some(path_vertex_buffer), Some(path_index_buffer)) =
+                (self.path_vertices.get(), self.path_indices.get())
+            {
+                PathBatch::draw(
+                    &self.path_pipeline,
+                    &mut pass,
+                    path_vertex_buffer,
+                    path_index_buffer,
+                    &all_path_verts,
+                    &all_path_indices,
+                );
+            }
         }
 
         self.readback.copy_from_texture(
@@ -344,6 +475,108 @@ impl WgpuBackend {
         self.queue.submit(std::iter::once(encoder.finish()));
 
         self.readback.map_and_copy(&self.device, target)
+    }
+}
+
+fn hash_text_nodes(nodes: &[(&ResolvedNode, &ResolvedText)]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for (node, text) in nodes {
+        node.source_index.hash(&mut hasher);
+        text.text.hash(&mut hasher);
+        text.font_family.hash(&mut hasher);
+        text.font_size.to_bits().hash(&mut hasher);
+        text.line_height.to_bits().hash(&mut hasher);
+        text.max_width.map(f64::to_bits).hash(&mut hasher);
+        hash_text_align(text.text_align, &mut hasher);
+    }
+    hasher.finish()
+}
+
+fn hash_icon(icon: &crate::shared::types::ResolvedIcon) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    icon.width.to_bits().hash(&mut hasher);
+    icon.height.to_bits().hash(&mut hasher);
+    icon.viewport_width.to_bits().hash(&mut hasher);
+    icon.viewport_height.to_bits().hash(&mut hasher);
+    icon.stroke.hash(&mut hasher);
+    icon.fill.hash(&mut hasher);
+    icon.stroke_width.to_bits().hash(&mut hasher);
+    icon.absolute_stroke_width.hash(&mut hasher);
+    hash_line_cap(icon.line_cap, &mut hasher);
+    hash_line_join(icon.line_join, &mut hasher);
+    for element in &icon.elements {
+        hash_icon_primitive(element, &mut hasher);
+    }
+    hasher.finish()
+}
+
+fn hash_text_align(align: crate::schema::TextAlign, hasher: &mut DefaultHasher) {
+    match align {
+        crate::schema::TextAlign::Left => 0_u8.hash(hasher),
+        crate::schema::TextAlign::Center => 1_u8.hash(hasher),
+        crate::schema::TextAlign::Right => 2_u8.hash(hasher),
+    }
+}
+
+fn hash_line_cap(cap: crate::schema::IconLineCap, hasher: &mut DefaultHasher) {
+    match cap {
+        crate::schema::IconLineCap::Butt => 0_u8.hash(hasher),
+        crate::schema::IconLineCap::Round => 1_u8.hash(hasher),
+        crate::schema::IconLineCap::Square => 2_u8.hash(hasher),
+    }
+}
+
+fn hash_line_join(join: crate::schema::IconLineJoin, hasher: &mut DefaultHasher) {
+    match join {
+        crate::schema::IconLineJoin::Bevel => 0_u8.hash(hasher),
+        crate::schema::IconLineJoin::Miter => 1_u8.hash(hasher),
+        crate::schema::IconLineJoin::Round => 2_u8.hash(hasher),
+    }
+}
+
+fn hash_icon_primitive(primitive: &crate::schema::IconPrimitive, hasher: &mut DefaultHasher) {
+    match primitive {
+        crate::schema::IconPrimitive::Path(path) => {
+            0_u8.hash(hasher);
+            path.d.hash(hasher);
+        }
+        crate::schema::IconPrimitive::Circle(circle) => {
+            1_u8.hash(hasher);
+            circle.cx.to_bits().hash(hasher);
+            circle.cy.to_bits().hash(hasher);
+            circle.r.to_bits().hash(hasher);
+        }
+        crate::schema::IconPrimitive::Line(line) => {
+            2_u8.hash(hasher);
+            line.x1.to_bits().hash(hasher);
+            line.y1.to_bits().hash(hasher);
+            line.x2.to_bits().hash(hasher);
+            line.y2.to_bits().hash(hasher);
+        }
+        crate::schema::IconPrimitive::Polyline(polyline) => {
+            3_u8.hash(hasher);
+            hash_points(&polyline.points, hasher);
+        }
+        crate::schema::IconPrimitive::Polygon(polygon) => {
+            4_u8.hash(hasher);
+            hash_points(&polygon.points, hasher);
+        }
+        crate::schema::IconPrimitive::Rect(rect) => {
+            5_u8.hash(hasher);
+            rect.x.map(f64::to_bits).hash(hasher);
+            rect.y.map(f64::to_bits).hash(hasher);
+            rect.width.to_bits().hash(hasher);
+            rect.height.to_bits().hash(hasher);
+            rect.rx.map(f64::to_bits).hash(hasher);
+            rect.ry.map(f64::to_bits).hash(hasher);
+        }
+    }
+}
+
+fn hash_points(points: &[(f64, f64)], hasher: &mut DefaultHasher) {
+    for (x, y) in points {
+        x.to_bits().hash(hasher);
+        y.to_bits().hash(hasher);
     }
 }
 
@@ -361,11 +594,16 @@ impl RenderBackend for WgpuBackend {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn make_framebuffer(
+fn make_framebuffers(
     device: &wgpu::Device,
     width: u32,
     height: u32,
-) -> (wgpu::Texture, wgpu::TextureView) {
+) -> (
+    wgpu::Texture,
+    wgpu::TextureView,
+    wgpu::Texture,
+    wgpu::TextureView,
+) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("framebuffer"),
         size: wgpu::Extent3d {
@@ -381,16 +619,29 @@ fn make_framebuffer(
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
+    let msaa_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("framebuffer_msaa"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: MSAA_SAMPLE_COUNT,
+        dimension: wgpu::TextureDimension::D2,
+        format: FRAMEBUFFER_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let msaa_view = msaa_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view, msaa_texture, msaa_view)
 }
 
 #[cfg(test)]
 mod tests {
     use super::WgpuBackend;
     use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-    use crate::schema::{
-        IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, TextAlign,
-    };
+    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, TextAlign};
     use crate::shared::types::{
         ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
     };
@@ -508,6 +759,9 @@ mod tests {
         }
 
         assert!(total_diff < 320_000, "total diff too high: {total_diff}");
-        assert!(changed_pixels < 1_200, "changed pixels too high: {changed_pixels}");
+        assert!(
+            changed_pixels < 1_200,
+            "changed pixels too high: {changed_pixels}"
+        );
     }
 }

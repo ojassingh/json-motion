@@ -16,18 +16,18 @@ use crate::shared::types::{ResolvedNode, ResolvedRect};
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct RectInstance {
-    pub mat_col0:     [f32; 2],   // 8 bytes
-    pub mat_col1:     [f32; 2],   // 8 bytes
-    pub translation:  [f32; 2],   // 8 bytes  — world-space centre (pixels)
-    pub half_size:    [f32; 2],   // 8 bytes  — (w/2, h/2)
-    pub corner_radius: f32,       // 4 bytes
-    pub opacity:       f32,       // 4 bytes
-    pub stroke_width:  f32,       // 4 bytes
-    pub has_fill:      f32,       // 4 bytes  — 1.0 / 0.0
-    pub has_stroke:    f32,       // 4 bytes  — 1.0 / 0.0
-    pub _pad:          f32,       // 4 bytes
-    pub fill_color:   [f32; 4],   // 16 bytes
-    pub stroke_color: [f32; 4],   // 16 bytes
+    pub mat_col0: [f32; 2],     // 8 bytes
+    pub mat_col1: [f32; 2],     // 8 bytes
+    pub translation: [f32; 2],  // 8 bytes  — world-space centre (pixels)
+    pub half_size: [f32; 2],    // 8 bytes  — (w/2, h/2)
+    pub corner_radius: f32,     // 4 bytes
+    pub opacity: f32,           // 4 bytes
+    pub stroke_width: f32,      // 4 bytes
+    pub has_fill: f32,          // 4 bytes  — 1.0 / 0.0
+    pub has_stroke: f32,        // 4 bytes  — 1.0 / 0.0
+    pub _pad: f32,              // 4 bytes
+    pub fill_color: [f32; 4],   // 16 bytes
+    pub stroke_color: [f32; 4], // 16 bytes
 }
 // Total: 88 bytes, 4-byte aligned.
 
@@ -112,19 +112,20 @@ impl RectInstance {
             };
         }
 
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // mat_col0
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // mat_col1
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // translation
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // half_size
-        attr!(wgpu::VertexFormat::Float32,   4);  // corner_radius
-        attr!(wgpu::VertexFormat::Float32,   4);  // opacity
-        attr!(wgpu::VertexFormat::Float32,   4);  // stroke_width
-        attr!(wgpu::VertexFormat::Float32,   4);  // has_fill
-        attr!(wgpu::VertexFormat::Float32,   4);  // has_stroke
-        attr!(wgpu::VertexFormat::Float32,   4);  // _pad
+        attr!(wgpu::VertexFormat::Float32x2, 8); // mat_col0
+        attr!(wgpu::VertexFormat::Float32x2, 8); // mat_col1
+        attr!(wgpu::VertexFormat::Float32x2, 8); // translation
+        attr!(wgpu::VertexFormat::Float32x2, 8); // half_size
+        attr!(wgpu::VertexFormat::Float32, 4); // corner_radius
+        attr!(wgpu::VertexFormat::Float32, 4); // opacity
+        attr!(wgpu::VertexFormat::Float32, 4); // stroke_width
+        attr!(wgpu::VertexFormat::Float32, 4); // has_fill
+        attr!(wgpu::VertexFormat::Float32, 4); // has_stroke
+        attr!(wgpu::VertexFormat::Float32, 4); // _pad
         attr!(wgpu::VertexFormat::Float32x4, 16); // fill_color
         attr!(wgpu::VertexFormat::Float32x4, 16); // stroke_color
 
+        let _ = (offset, loc);
         attrs
     }
 }
@@ -140,11 +141,11 @@ struct QuadVertex {
 
 const QUAD_VERTS: &[QuadVertex] = &[
     QuadVertex { pos: [-0.5, -0.5] },
-    QuadVertex { pos: [ 0.5, -0.5] },
-    QuadVertex { pos: [ 0.5,  0.5] },
+    QuadVertex { pos: [0.5, -0.5] },
+    QuadVertex { pos: [0.5, 0.5] },
     QuadVertex { pos: [-0.5, -0.5] },
-    QuadVertex { pos: [ 0.5,  0.5] },
-    QuadVertex { pos: [-0.5,  0.5] },
+    QuadVertex { pos: [0.5, 0.5] },
+    QuadVertex { pos: [-0.5, 0.5] },
 ];
 
 // ── RectPipeline ─────────────────────────────────────────────────────────────
@@ -159,13 +160,12 @@ impl RectPipeline {
     pub fn new(
         device: &wgpu::Device,
         framebuffer_format: wgpu::TextureFormat,
+        sample_count: u32,
         globals_layout: &Option<&wgpu::BindGroupLayout>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect_shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("shaders/rect.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/rect.wgsl").into()),
         });
 
         // wgpu 29: bind_group_layouts is &[Option<&BindGroupLayout>], no push_constant_ranges
@@ -218,7 +218,10 @@ impl RectPipeline {
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                ..Default::default()
+            },
             // wgpu 29: multiview → multiview_mask
             multiview_mask: None,
             cache: None,
@@ -230,7 +233,10 @@ impl RectPipeline {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        Self { pipeline, quad_vbuf }
+        Self {
+            pipeline,
+            quad_vbuf,
+        }
     }
 }
 
@@ -244,18 +250,12 @@ impl RectBatch {
     pub fn draw<'rp>(
         pipeline: &'rp RectPipeline,
         pass: &mut wgpu::RenderPass<'rp>,
-        device: &wgpu::Device,
+        instance_buf: &'rp wgpu::Buffer,
         instances: &[RectInstance],
     ) {
         if instances.is_empty() {
             return;
         }
-
-        let instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rect_instances"),
-            contents: bytemuck::cast_slice(instances),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
 
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_vertex_buffer(0, pipeline.quad_vbuf.slice(..));

@@ -39,12 +39,16 @@ impl TextInstance {
 
         let gw = entry.region.w as f32;
         let gh = entry.region.h as f32;
-        let cx = entry.world_x + gw / 2.0;
-        let cy = entry.world_y + gh / 2.0;
+        let local_cx = entry.local_x + gw / 2.0;
+        let local_cy = entry.local_y + gh / 2.0;
 
         let opacity = node.opacity.clamp(0.0, 1.0) as f32;
         let (r, g, b) = if let crate::shared::types::ResolvedNodeData::Text(t) = &node.data {
-            (t.color.0 as f32 / 255.0, t.color.1 as f32 / 255.0, t.color.2 as f32 / 255.0)
+            (
+                t.color.0 as f32 / 255.0,
+                t.color.1 as f32 / 255.0,
+                t.color.2 as f32 / 255.0,
+            )
         } else {
             (1.0, 1.0, 1.0)
         };
@@ -52,9 +56,15 @@ impl TextInstance {
         Self {
             mat_col0: [m00, m10],
             mat_col1: [m01, m11],
-            translation: [cx, cy],
+            translation: [
+                m00 * local_cx + m01 * local_cy + node.x as f32,
+                m10 * local_cx + m11 * local_cy + node.y as f32,
+            ],
             glyph_size: [gw, gh],
-            uv_origin: [entry.region.x as f32 / atlas_w, entry.region.y as f32 / atlas_h],
+            uv_origin: [
+                entry.region.x as f32 / atlas_w,
+                entry.region.y as f32 / atlas_h,
+            ],
             uv_extent: [gw / atlas_w, gh / atlas_h],
             color: [r * opacity, g * opacity, b * opacity, opacity],
         }
@@ -77,14 +87,15 @@ impl TextInstance {
             };
         }
 
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // mat_col0
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // mat_col1
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // translation
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // glyph_size
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // uv_origin
-        attr!(wgpu::VertexFormat::Float32x2, 8);  // uv_extent
+        attr!(wgpu::VertexFormat::Float32x2, 8); // mat_col0
+        attr!(wgpu::VertexFormat::Float32x2, 8); // mat_col1
+        attr!(wgpu::VertexFormat::Float32x2, 8); // translation
+        attr!(wgpu::VertexFormat::Float32x2, 8); // glyph_size
+        attr!(wgpu::VertexFormat::Float32x2, 8); // uv_origin
+        attr!(wgpu::VertexFormat::Float32x2, 8); // uv_extent
         attr!(wgpu::VertexFormat::Float32x4, 16); // color
 
+        let _ = (offset, loc);
         attrs
     }
 }
@@ -97,11 +108,11 @@ struct QuadVertex {
 
 const QUAD_VERTS: &[QuadVertex] = &[
     QuadVertex { pos: [-0.5, -0.5] },
-    QuadVertex { pos: [ 0.5, -0.5] },
-    QuadVertex { pos: [ 0.5,  0.5] },
+    QuadVertex { pos: [0.5, -0.5] },
+    QuadVertex { pos: [0.5, 0.5] },
     QuadVertex { pos: [-0.5, -0.5] },
-    QuadVertex { pos: [ 0.5,  0.5] },
-    QuadVertex { pos: [-0.5,  0.5] },
+    QuadVertex { pos: [0.5, 0.5] },
+    QuadVertex { pos: [-0.5, 0.5] },
 ];
 
 pub struct TextPipeline {
@@ -114,6 +125,7 @@ impl TextPipeline {
     pub fn new(
         device: &wgpu::Device,
         framebuffer_format: wgpu::TextureFormat,
+        sample_count: u32,
         globals_layout: &Option<&wgpu::BindGroupLayout>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -191,7 +203,10 @@ impl TextPipeline {
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                ..Default::default()
+            },
             multiview_mask: None,
             cache: None,
         });
@@ -238,19 +253,13 @@ impl TextBatch {
     pub fn draw<'rp>(
         pipeline: &'rp TextPipeline,
         pass: &mut wgpu::RenderPass<'rp>,
-        device: &wgpu::Device,
         atlas_bg: &'rp wgpu::BindGroup,
+        instance_buf: &'rp wgpu::Buffer,
         instances: &[TextInstance],
     ) {
         if instances.is_empty() {
             return;
         }
-
-        let instance_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("text_instances"),
-            contents: bytemuck::cast_slice(instances),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
 
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_bind_group(1, atlas_bg, &[]);
