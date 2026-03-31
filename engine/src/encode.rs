@@ -8,11 +8,29 @@ use ffmpeg::util::rational::Rational;
 use ffmpeg_next as ffmpeg;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "gpu")]
+use crate::gpu::WgpuBackend;
 use crate::render::FrameBuffer;
+#[cfg(feature = "gpu")]
+use crate::shared::types::ResolvedFrame;
+#[cfg(feature = "gpu")]
+use crate::text::TextMeasurer;
 
 pub struct EncodeTimings {
     pub encode: Duration,
     pub render: Duration,
+}
+
+#[cfg(feature = "gpu")]
+pub struct WgpuEncodeRequest<'a> {
+    pub backend: &'a mut WgpuBackend,
+    pub codec: &'a str,
+    pub fps: f64,
+    pub frame_count: usize,
+    pub height: u32,
+    pub measurer: &'a dyn TextMeasurer,
+    pub output_path: &'a str,
+    pub width: u32,
 }
 
 pub fn pick_best_h264_encoder() -> String {
@@ -240,6 +258,178 @@ where
         encode_duration += encode_start.elapsed();
 
         std::mem::swap(&mut fb_a, &mut fb_b);
+    }
+
+    let flush_start = Instant::now();
+    encoder
+        .send_eof()
+        .map_err(|error| format!("failed to flush encoder: {error}"))?;
+    drain_packets(
+        &mut encoder,
+        &mut output,
+        stream_index,
+        time_base,
+        output_time_base,
+    )?;
+
+    output
+        .write_trailer()
+        .map_err(|error| format!("failed to finalize mp4: {error}"))?;
+    encode_duration += flush_start.elapsed();
+
+    Ok(EncodeTimings {
+        encode: encode_duration,
+        render: render_duration,
+    })
+}
+
+#[cfg(feature = "gpu")]
+pub fn encode_wgpu<F>(
+    request: WgpuEncodeRequest<'_>,
+    mut resolve_frame: F,
+) -> Result<EncodeTimings, String>
+where
+    F: FnMut(usize) -> Result<ResolvedFrame, String>,
+{
+    let WgpuEncodeRequest {
+        backend,
+        codec,
+        fps,
+        frame_count,
+        height,
+        measurer,
+        output_path,
+        width,
+    } = request;
+
+    ffmpeg::init().map_err(|error| format!("failed to initialize ffmpeg: {error}"))?;
+
+    i32::try_from(width).map_err(|_| format!("invalid width {width}"))?;
+    i32::try_from(height).map_err(|_| format!("invalid height {height}"))?;
+    let fps_value = fps.round();
+    if !(1.0..=(i32::MAX as f64)).contains(&fps_value) {
+        return Err(format!("unsupported fps {fps}"));
+    }
+    let fps_i32 = fps_value as i32;
+    let time_base = Rational(1, fps_i32);
+
+    let codec = encoder::find_by_name(codec).ok_or_else(|| format!("unknown encoder: {codec}"))?;
+    let pixel_format = choose_pixel_format(codec)?;
+
+    let mut output = format::output(&output_path)
+        .map_err(|error| format!("failed to open output {output_path}: {error}"))?;
+    let global_header = output
+        .format()
+        .flags()
+        .contains(format::Flags::GLOBAL_HEADER);
+
+    let mut stream = output
+        .add_stream(Some(codec))
+        .map_err(|error| format!("failed to add output stream: {error}"))?;
+
+    let mut encoder = codec::context::Context::new_with_codec(codec)
+        .encoder()
+        .video()
+        .map_err(|error| format!("failed to create video encoder: {error}"))?;
+
+    encoder.set_width(width);
+    encoder.set_height(height);
+    encoder.set_format(pixel_format);
+    encoder.set_time_base(time_base);
+    encoder.set_frame_rate(Some(Rational(fps_i32, 1)));
+
+    if global_header {
+        encoder.set_flags(codec::Flags::GLOBAL_HEADER);
+    }
+
+    stream.set_time_base(time_base);
+    stream.set_parameters(&encoder);
+
+    let mut encoder = encoder
+        .open()
+        .map_err(|error| format!("failed to open encoder {}: {error}", codec.name()))?;
+
+    stream.set_time_base(time_base);
+    stream.set_rate(Rational(fps_i32, 1));
+    stream.set_avg_frame_rate(Rational(fps_i32, 1));
+    stream.set_parameters(&encoder);
+
+    let stream_index = stream.index();
+
+    output
+        .write_header()
+        .map_err(|error| format!("failed to write mp4 header: {error}"))?;
+    let output_time_base = output
+        .stream(stream_index)
+        .ok_or_else(|| "failed to read output stream after header write".to_string())?
+        .time_base();
+
+    let mut scaler = scaling::Context::get(
+        Pixel::RGBA,
+        width,
+        height,
+        pixel_format,
+        width,
+        height,
+        scaling::flag::Flags::BILINEAR,
+    )
+    .map_err(|error| format!("failed to create pixel converter: {error}"))?;
+
+    let mut render_duration = Duration::ZERO;
+    let mut encode_duration = Duration::ZERO;
+
+    let mut rgba = frame::Video::new(Pixel::RGBA, width, height);
+    let mut converted = frame::Video::new(pixel_format, width, height);
+    let mut buffers = [FrameBuffer::new(width, height), FrameBuffer::new(width, height)];
+    let mut buffer_index = 0usize;
+    let mut submitted = 0usize;
+    let mut encoded = 0usize;
+
+    while submitted < frame_count && backend.can_accept_frame() {
+        let render_start = Instant::now();
+        let frame = resolve_frame(submitted)?;
+        backend.submit_frame(&frame, measurer)?;
+        render_duration += render_start.elapsed();
+        submitted += 1;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+
+    while encoded < frame_count {
+        let render_start = Instant::now();
+        backend.collect_frame(&mut buffers[buffer_index])?;
+        render_duration += render_start.elapsed();
+
+        while submitted < frame_count && backend.can_accept_frame() {
+            let render_start = Instant::now();
+            let frame = resolve_frame(submitted)?;
+            backend.submit_frame(&frame, measurer)?;
+            render_duration += render_start.elapsed();
+            submitted += 1;
+        }
+
+        let encode_start = Instant::now();
+        copy_rgba_frame(&mut rgba, buffers[buffer_index].pixels(), w, h)?;
+        scaler
+            .run(&rgba, &mut converted)
+            .map_err(|error| format!("failed to convert frame {encoded}: {error}"))?;
+        converted.set_pts(Some(encoded as i64));
+
+        encoder
+            .send_frame(&converted)
+            .map_err(|error| format!("failed to send frame {encoded} to encoder: {error}"))?;
+        drain_packets(
+            &mut encoder,
+            &mut output,
+            stream_index,
+            time_base,
+            output_time_base,
+        )?;
+        encode_duration += encode_start.elapsed();
+
+        buffer_index = (buffer_index + 1) % buffers.len();
+        encoded += 1;
     }
 
     let flush_start = Instant::now();

@@ -252,17 +252,17 @@ impl PathBatch {
         pass: &mut wgpu::RenderPass<'rp>,
         vertex_buffer: &'rp wgpu::Buffer,
         index_buffer: &'rp wgpu::Buffer,
-        vertices: &[PathVertex],
-        indices: &[u32],
+        vertex_count: usize,
+        index_count: usize,
     ) {
-        if vertices.is_empty() || indices.is_empty() {
+        if vertex_count == 0 || index_count == 0 {
             return;
         }
 
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..indices.len() as u32, 0, 0..1);
+        pass.draw_indexed(0..index_count as u32, 0, 0..1);
     }
 }
 

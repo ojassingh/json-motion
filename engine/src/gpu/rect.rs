@@ -251,15 +251,15 @@ impl RectBatch {
         pipeline: &'rp RectPipeline,
         pass: &mut wgpu::RenderPass<'rp>,
         instance_buf: &'rp wgpu::Buffer,
-        instances: &[RectInstance],
+        instance_count: usize,
     ) {
-        if instances.is_empty() {
+        if instance_count == 0 {
             return;
         }
 
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_vertex_buffer(0, pipeline.quad_vbuf.slice(..));
         pass.set_vertex_buffer(1, instance_buf.slice(..));
-        pass.draw(0..6, 0..instances.len() as u32);
+        pass.draw(0..6, 0..instance_count as u32);
     }
 }

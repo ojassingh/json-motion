@@ -4,6 +4,8 @@ use std::{fs, thread};
 
 use crate::animation::{self, CompiledVideo};
 use crate::encode::{self, EncodeTimings};
+#[cfg(feature = "gpu")]
+use crate::gpu::WgpuBackend;
 use crate::render::RenderBackend;
 use crate::schema::VideoDescription;
 use crate::text::{SkiaTextMeasurer, TextMeasurer};
@@ -102,6 +104,112 @@ pub fn parallel_encode(
             .collect();
 
         handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let chunk_processing_elapsed = processing_started.elapsed();
+
+    for result in errors {
+        result?;
+    }
+
+    let concat_started = Instant::now();
+    let concat_result = concat_segments(&chunk_files, request.output_path);
+    let concat_elapsed = concat_started.elapsed();
+
+    cleanup_files(&chunk_files);
+    concat_result?;
+
+    Ok(EncodeTimings {
+        render: chunk_processing_elapsed,
+        encode: concat_elapsed,
+    })
+}
+
+#[cfg(feature = "gpu")]
+pub fn parallel_encode_wgpu(
+    desc: &VideoDescription,
+    compiled: &CompiledVideo<'_>,
+    request: ParallelEncodeRequest<'_>,
+) -> Result<EncodeTimings, String> {
+    if request.num_workers <= 1 || request.frame_count < request.num_workers * 2 {
+        let local_measurer = SkiaTextMeasurer::new();
+        let mut backend = WgpuBackend::new(desc.width, desc.height)?;
+        return encode::encode_wgpu(
+            encode::WgpuEncodeRequest {
+                backend: &mut backend,
+                codec: request.codec,
+                fps: desc.fps,
+                frame_count: request.frame_count,
+                height: desc.height,
+                measurer: &local_measurer as &dyn TextMeasurer,
+                output_path: request.output_path,
+                width: desc.width,
+            },
+            |frame_index| animation::resolve_frame_fast(compiled, frame_index as u32, &local_measurer),
+        );
+    }
+
+    let chunk_size = request.frame_count.div_ceil(request.num_workers);
+    let tmp_dir = Path::new(request.output_path)
+        .parent()
+        .unwrap_or(Path::new("."));
+    let tmp_prefix = format!(".chunk_{}", std::process::id());
+
+    let mut chunk_files: Vec<PathBuf> = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+
+    for i in 0..request.num_workers {
+        let from = i * chunk_size;
+        let to = ((i + 1) * chunk_size).min(request.frame_count);
+        if from >= to {
+            break;
+        }
+        let file = tmp_dir.join(format!("{tmp_prefix}_{i}.mkv"));
+        chunk_files.push(file);
+        ranges.push((from, to));
+    }
+
+    let width = desc.width;
+    let height = desc.height;
+    let fps = desc.fps;
+    let codec_str = request.codec.to_string();
+
+    let processing_started = Instant::now();
+    let errors: Vec<Result<EncodeTimings, String>> = thread::scope(|scope| {
+        let handles: Vec<_> = ranges
+            .iter()
+            .zip(chunk_files.iter())
+            .map(|(&(from, to), path)| {
+                let codec_ref = &codec_str;
+                let path_str = path.to_str().unwrap().to_string();
+                scope.spawn(move || {
+                    let local_measurer = SkiaTextMeasurer::new();
+                    let mut backend = WgpuBackend::new(width, height)?;
+
+                    encode::encode_wgpu(
+                        encode::WgpuEncodeRequest {
+                            backend: &mut backend,
+                            codec: codec_ref,
+                            fps,
+                            frame_count: to - from,
+                            height,
+                            measurer: &local_measurer as &dyn TextMeasurer,
+                            output_path: &path_str,
+                            width,
+                        },
+                        |local_index| {
+                            let global_index = from + local_index;
+                            animation::resolve_frame_fast(
+                                compiled,
+                                global_index as u32,
+                                &local_measurer,
+                            )
+                        },
+                    )
+                })
+            })
+            .collect();
+
+        handles.into_iter().map(|handle| handle.join().unwrap()).collect()
     });
     let chunk_processing_elapsed = processing_started.elapsed();
 

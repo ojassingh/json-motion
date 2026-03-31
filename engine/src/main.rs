@@ -161,33 +161,33 @@ fn run_encode(
                     "backend=gpu (wgpu), parallel_workers={}",
                     request.parallel_workers
                 );
-                return parallel_encode::parallel_encode(
+                return parallel_encode::parallel_encode_wgpu(
                     desc,
                     compiled,
-                    measurer,
                     parallel_encode::ParallelEncodeRequest {
                         codec: request.codec,
                         output_path: request.output_path,
                         frame_count: request.total_frames,
                         num_workers: request.parallel_workers,
                     },
-                    gpu_backend_factory,
                 );
             }
             let mut backend = gpu::WgpuBackend::new(desc.width, desc.height)
                 .map_err(|error| format!("failed to initialize GPU backend: {error}"))?;
             eprintln!("backend=gpu (wgpu)");
-            return encode::encode(
-                desc.width,
-                desc.height,
-                desc.fps,
-                request.codec,
-                request.output_path,
-                request.total_frames,
-                |frame_index, target| {
-                    let frame =
-                        animation::resolve_frame_fast(compiled, frame_index as u32, measurer)?;
-                    backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
+            return encode::encode_wgpu(
+                encode::WgpuEncodeRequest {
+                    backend: &mut backend,
+                    codec: request.codec,
+                    fps: desc.fps,
+                    frame_count: request.total_frames,
+                    height: desc.height,
+                    measurer: measurer as &dyn TextMeasurer,
+                    output_path: request.output_path,
+                    width: desc.width,
+                },
+                |frame_index| {
+                    animation::resolve_frame_fast(compiled, frame_index as u32, measurer)
                 },
             );
         }

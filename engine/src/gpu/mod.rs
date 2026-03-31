@@ -5,13 +5,16 @@ mod rect;
 mod text_pipeline;
 
 use std::collections::HashMap;
+use std::env;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::render::{FrameBuffer, RenderBackend};
-use crate::shared::types::{ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedText};
+use crate::shared::types::{
+    ResolvedFrame, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedText,
+};
 use crate::text::TextMeasurer;
 
 use path_pipeline::{PathBatch, PathPipeline, PathVertex};
@@ -22,6 +25,8 @@ use text_pipeline::{TextBatch, TextInstance, TextPipeline};
 /// RGBA8 linear — same channel order as ffmpeg's `Pixel::RGBA`.
 const FRAMEBUFFER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const MSAA_SAMPLE_COUNT: u32 = 4;
+const NVIDIA_VENDOR_ID: u32 = 0x10DE;
+const ENV_ENGINE_REQUIRE_NVIDIA_VULKAN: &str = "ENGINE_REQUIRE_NVIDIA_VULKAN";
 
 // ── Globals uniform ───────────────────────────────────────────────────────────
 
@@ -79,15 +84,109 @@ impl ReusableBuffer {
 struct TextAtlasCache {
     bind_group: wgpu::BindGroup,
     entries: Vec<atlas::TextNodeEntry>,
-    height: u32,
     key: u64,
     _texture: wgpu::Texture,
     width: u32,
+    height: u32,
 }
 
 struct CachedPathGeometry {
     indices: Vec<u32>,
     vertices: Vec<PathVertex>,
+}
+
+struct StaticBuffer<T> {
+    buffer: wgpu::Buffer,
+    len: usize,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Pod> StaticBuffer<T> {
+    fn new(device: &wgpu::Device, label: &'static str, usage: wgpu::BufferUsages, data: &[T]) -> Self {
+        Self {
+            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(data),
+                usage,
+            }),
+            len: data.len(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+struct CachedSceneBatch {
+    path_indices: Option<StaticBuffer<u32>>,
+    path_vertices: Option<StaticBuffer<PathVertex>>,
+    rect_instances: Option<StaticBuffer<RectInstance>>,
+    text_atlas: Option<TextAtlasCache>,
+    text_instances: Option<StaticBuffer<TextInstance>>,
+}
+
+struct PreparedFrameBatch {
+    dynamic_path_indices: Vec<u32>,
+    dynamic_path_vertices: Vec<PathVertex>,
+    dynamic_rect_instances: Vec<RectInstance>,
+    scene_cache_key: Option<u64>,
+    dynamic_text_instances: Vec<TextInstance>,
+}
+
+fn env_var_is_truthy(name: &str) -> bool {
+    env::var(name).is_ok_and(|value| {
+        let normalized = value.trim().to_ascii_lowercase();
+        !normalized.is_empty() && normalized != "0" && normalized != "false" && normalized != "no"
+    })
+}
+
+fn default_backends() -> wgpu::Backends {
+    if cfg!(target_os = "linux") {
+        wgpu::Backends::VULKAN
+    } else {
+        wgpu::Backends::PRIMARY
+    }
+}
+
+fn format_adapter_info(info: &wgpu::AdapterInfo) -> String {
+    format!(
+        "name={:?}, backend={:?}, vendor=0x{:04x}, device=0x{:04x}, type={:?}, driver={:?}, driver_info={:?}, pci_bus={:?}",
+        info.name,
+        info.backend,
+        info.vendor,
+        info.device,
+        info.device_type,
+        info.driver,
+        info.driver_info,
+        info.device_pci_bus_id
+    )
+}
+
+async fn request_default_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, String> {
+    instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await
+        .map_err(|error| format!("no suitable GPU adapter found: {error}"))
+}
+
+async fn request_nvidia_vulkan_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, String> {
+    let adapters = instance.enumerate_adapters(wgpu::Backends::VULKAN).await;
+    let mut visible_adapters = Vec::with_capacity(adapters.len());
+
+    for adapter in adapters {
+        let info = adapter.get_info();
+        visible_adapters.push(format_adapter_info(&info));
+        if info.backend == wgpu::Backend::Vulkan && info.vendor == NVIDIA_VENDOR_ID {
+            return Ok(adapter);
+        }
+    }
+
+    Err(format!(
+        "no NVIDIA Vulkan adapter available; visible adapters: {}",
+        visible_adapters.join(", ")
+    ))
 }
 
 // ── WgpuBackend ───────────────────────────────────────────────────────────────
@@ -118,28 +217,40 @@ pub struct WgpuBackend {
     text_instances: ReusableBuffer,
     path_vertices: ReusableBuffer,
     path_indices: ReusableBuffer,
-    text_atlas_cache: Option<TextAtlasCache>,
+    dynamic_text_atlas_cache: Option<TextAtlasCache>,
     path_cache: HashMap<u64, CachedPathGeometry>,
+    scene_batches: HashMap<u64, CachedSceneBatch>,
 }
 
 impl WgpuBackend {
     /// Initialise a wgpu device and all GPU resources for the given canvas size.
     /// Returns `Err` if no suitable GPU adapter is found.
     pub fn new(width: u32, height: u32) -> Result<Self, String> {
+        let require_nvidia_vulkan =
+            cfg!(target_os = "linux") && env_var_is_truthy(ENV_ENGINE_REQUIRE_NVIDIA_VULKAN);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends: default_backends(),
             flags: wgpu::InstanceFlags::default(),
             memory_budget_thresholds: Default::default(),
             backend_options: Default::default(),
             display: None,
         });
-
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        }))
-        .map_err(|e| format!("no suitable GPU adapter found: {e}"))?;
+        let adapter = if require_nvidia_vulkan {
+            pollster::block_on(request_nvidia_vulkan_adapter(&instance))?
+        } else {
+            pollster::block_on(request_default_adapter(&instance))?
+        };
+        let adapter_info = adapter.get_info();
+        eprintln!("wgpu adapter: {}", format_adapter_info(&adapter_info));
+        if require_nvidia_vulkan
+            && (adapter_info.backend != wgpu::Backend::Vulkan
+                || adapter_info.vendor != NVIDIA_VENDOR_ID)
+        {
+            return Err(format!(
+                "selected GPU adapter does not satisfy the required NVIDIA Vulkan lane: {}",
+                format_adapter_info(&adapter_info)
+            ));
+        }
 
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("engine"),
@@ -236,8 +347,9 @@ impl WgpuBackend {
             text_instances: ReusableBuffer::new("text_instances", wgpu::BufferUsages::VERTEX),
             path_vertices: ReusableBuffer::new("path_vbuf", wgpu::BufferUsages::VERTEX),
             path_indices: ReusableBuffer::new("path_ibuf", wgpu::BufferUsages::INDEX),
-            text_atlas_cache: None,
+            dynamic_text_atlas_cache: None,
             path_cache: HashMap::new(),
+            scene_batches: HashMap::new(),
         })
     }
     fn ensure_dims(&mut self, width: u32, height: u32) {
@@ -250,6 +362,8 @@ impl WgpuBackend {
         self.msaa_framebuffer = msaa_fb;
         self.msaa_framebuffer_view = msaa_view;
         self.readback = ReadbackBuffer::new(&self.device, width, height);
+        self.dynamic_text_atlas_cache = None;
+        self.scene_batches.clear();
 
         let globals_data = Globals {
             canvas_size: [width as f32, height as f32],
@@ -262,12 +376,16 @@ impl WgpuBackend {
         self.fb_height = height;
     }
 
-    fn render_gpu(
+    pub fn can_accept_frame(&self) -> bool {
+        self.readback.can_submit()
+    }
+
+    pub fn submit_frame(
         &mut self,
         frame: &ResolvedFrame,
-        target: &mut FrameBuffer,
         measurer: &dyn TextMeasurer,
     ) -> Result<(), String> {
+        let prepared = self.prepare_frame_batch(frame, measurer)?;
         let (bg_r, bg_g, bg_b) = frame.background;
         let bg_color = wgpu::Color {
             r: bg_r as f64 / 255.0,
@@ -276,140 +394,26 @@ impl WgpuBackend {
             a: 1.0,
         };
 
-        let rect_instances: Vec<RectInstance> = frame
-            .nodes
-            .iter()
-            .filter_map(|node| {
-                if let ResolvedNodeData::Rect(rect) = &node.data {
-                    Some(RectInstance::from_node(node, rect))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let text_nodes: Vec<(&ResolvedNode, &ResolvedText)> = frame
-            .nodes
-            .iter()
-            .filter_map(|node| {
-                if let ResolvedNodeData::Text(t) = &node.data {
-                    Some((node, t))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let mut all_path_verts: Vec<PathVertex> = Vec::new();
-        let mut all_path_indices: Vec<u32> = Vec::new();
-        for node in &frame.nodes {
-            if let ResolvedNodeData::Icon(icon) = &node.data {
-                let cache_key = hash_icon(icon);
-                let cached = self.path_cache.entry(cache_key).or_insert_with(|| {
-                    let (vertices, indices) = path_pipeline::tessellate_icon(icon);
-                    CachedPathGeometry { vertices, indices }
-                });
-                path_pipeline::append_transformed_icon(
-                    node,
-                    icon,
-                    &cached.vertices,
-                    &cached.indices,
-                    &mut all_path_verts,
-                    &mut all_path_indices,
-                );
-            }
-        }
-
-        if !text_nodes.is_empty() {
-            let atlas_key = hash_text_nodes(&text_nodes);
-            let should_rebuild = self
-                .text_atlas_cache
-                .as_ref()
-                .is_none_or(|cache| cache.key != atlas_key);
-
-            if should_rebuild {
-                self.text_atlas_cache = atlas::build_text_atlas(&text_nodes, measurer).map(|ab| {
-                    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                        label: Some("glyph_atlas"),
-                        size: wgpu::Extent3d {
-                            width: ab.width,
-                            height: ab.height,
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: wgpu::TextureDimension::D2,
-                        format: wgpu::TextureFormat::R8Unorm,
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                        view_formats: &[],
-                    });
-                    self.queue.write_texture(
-                        wgpu::TexelCopyTextureInfo {
-                            texture: &texture,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        &ab.pixels,
-                        wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(ab.width),
-                            rows_per_image: Some(ab.height),
-                        },
-                        wgpu::Extent3d {
-                            width: ab.width,
-                            height: ab.height,
-                            depth_or_array_layers: 1,
-                        },
-                    );
-                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                    let bind_group = self.text_pipeline.create_atlas_bind_group(
-                        &self.device,
-                        &view,
-                        &self.atlas_sampler,
-                    );
-                    TextAtlasCache {
-                        bind_group,
-                        entries: ab.entries,
-                        height: ab.height,
-                        key: atlas_key,
-                        _texture: texture,
-                        width: ab.width,
-                    }
-                });
-            }
-        }
-
-        let text_node_lookup: HashMap<usize, &ResolvedNode> = text_nodes
-            .iter()
-            .map(|(node, _)| (node.source_index, *node))
-            .collect();
-        let mut text_instances = Vec::new();
-        if let Some(cache) = self.text_atlas_cache.as_ref() {
-            let atlas_width = cache.width as f32;
-            let atlas_height = cache.height as f32;
-            for entry in &cache.entries {
-                if let Some(node) = text_node_lookup.get(&entry.source_index) {
-                    for line in &entry.lines {
-                        text_instances.push(TextInstance::from_line(
-                            node,
-                            line,
-                            atlas_width,
-                            atlas_height,
-                        ));
-                    }
-                }
-            }
-        }
-
-        self.rect_instances
-            .write(&self.device, &self.queue, &rect_instances);
-        self.text_instances
-            .write(&self.device, &self.queue, &text_instances);
-        self.path_vertices
-            .write(&self.device, &self.queue, &all_path_verts);
-        self.path_indices
-            .write(&self.device, &self.queue, &all_path_indices);
+        self.rect_instances.write(
+            &self.device,
+            &self.queue,
+            &prepared.dynamic_rect_instances,
+        );
+        self.text_instances.write(
+            &self.device,
+            &self.queue,
+            &prepared.dynamic_text_instances,
+        );
+        self.path_vertices.write(
+            &self.device,
+            &self.queue,
+            &prepared.dynamic_path_vertices,
+        );
+        self.path_indices.write(
+            &self.device,
+            &self.queue,
+            &prepared.dynamic_path_indices,
+        );
 
         let mut encoder = self
             .device
@@ -436,19 +440,65 @@ impl WgpuBackend {
             });
 
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
+
+            if let Some(scene_cache_key) = prepared.scene_cache_key {
+                if let Some(static_batch) = self.scene_batches.get(&scene_cache_key) {
+                    if let Some(rect_instances) = static_batch.rect_instances.as_ref() {
+                        RectBatch::draw(
+                            &self.rect_pipeline,
+                            &mut pass,
+                            &rect_instances.buffer,
+                            rect_instances.len,
+                        );
+                    }
+
+                    if let (Some(text_atlas), Some(text_instances)) = (
+                        static_batch.text_atlas.as_ref(),
+                        static_batch.text_instances.as_ref(),
+                    ) {
+                        TextBatch::draw(
+                            &self.text_pipeline,
+                            &mut pass,
+                            &text_atlas.bind_group,
+                            &text_instances.buffer,
+                            text_instances.len,
+                        );
+                    }
+
+                    if let (Some(path_vertices), Some(path_indices)) = (
+                        static_batch.path_vertices.as_ref(),
+                        static_batch.path_indices.as_ref(),
+                    ) {
+                        PathBatch::draw(
+                            &self.path_pipeline,
+                            &mut pass,
+                            &path_vertices.buffer,
+                            &path_indices.buffer,
+                            path_vertices.len,
+                            path_indices.len,
+                        );
+                    }
+                }
+            }
+
             if let Some(rect_buffer) = self.rect_instances.get() {
-                RectBatch::draw(&self.rect_pipeline, &mut pass, rect_buffer, &rect_instances);
+                RectBatch::draw(
+                    &self.rect_pipeline,
+                    &mut pass,
+                    rect_buffer,
+                    prepared.dynamic_rect_instances.len(),
+                );
             }
 
             if let (Some(cache), Some(text_buffer)) =
-                (self.text_atlas_cache.as_ref(), self.text_instances.get())
+                (self.dynamic_text_atlas_cache.as_ref(), self.text_instances.get())
             {
                 TextBatch::draw(
                     &self.text_pipeline,
                     &mut pass,
                     &cache.bind_group,
                     text_buffer,
-                    &text_instances,
+                    prepared.dynamic_text_instances.len(),
                 );
             }
 
@@ -460,21 +510,294 @@ impl WgpuBackend {
                     &mut pass,
                     path_vertex_buffer,
                     path_index_buffer,
-                    &all_path_verts,
-                    &all_path_indices,
+                    prepared.dynamic_path_vertices.len(),
+                    prepared.dynamic_path_indices.len(),
                 );
             }
         }
 
-        self.readback.copy_from_texture(
+        self.readback.submit_copy(
             &mut encoder,
             &self.framebuffer,
-            target.width(),
-            target.height(),
-        );
+            self.fb_width,
+            self.fb_height,
+        )?;
         self.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
 
-        self.readback.map_and_copy(&self.device, target)
+    pub fn collect_frame(&mut self, target: &mut FrameBuffer) -> Result<(), String> {
+        self.readback.collect_oldest(&self.device, target)
+    }
+
+    fn render_gpu(
+        &mut self,
+        frame: &ResolvedFrame,
+        target: &mut FrameBuffer,
+        measurer: &dyn TextMeasurer,
+    ) -> Result<(), String> {
+        self.submit_frame(frame, measurer)?;
+        self.collect_frame(target)
+    }
+
+    fn prepare_frame_batch(
+        &mut self,
+        frame: &ResolvedFrame,
+        measurer: &dyn TextMeasurer,
+    ) -> Result<PreparedFrameBatch, String> {
+        if frame.scene_cache_key != 0 {
+            self.build_scene_batch_if_missing(frame, measurer)?;
+        }
+
+        let dynamic_rect_instances = frame
+            .nodes
+            .iter()
+            .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Dynamic)
+            .filter_map(|node| {
+                if let ResolvedNodeData::Rect(rect) = &node.data {
+                    Some(RectInstance::from_node(node, rect))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let dynamic_text_nodes = frame
+            .nodes
+            .iter()
+            .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Dynamic)
+            .filter_map(|node| {
+                if let ResolvedNodeData::Text(text) = &node.data {
+                    Some((node, text))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        self.prepare_dynamic_text_atlas(&dynamic_text_nodes, measurer);
+        let dynamic_text_instances = self
+            .dynamic_text_atlas_cache
+            .as_ref()
+            .map_or_else(Vec::new, |cache| build_text_instances(cache, &dynamic_text_nodes));
+
+        let mut dynamic_path_vertices = Vec::new();
+        let mut dynamic_path_indices = Vec::new();
+        for node in frame
+            .nodes
+            .iter()
+            .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Dynamic)
+        {
+            if let ResolvedNodeData::Icon(icon) = &node.data {
+                let cached = self.cached_icon_geometry(icon);
+                path_pipeline::append_transformed_icon(
+                    node,
+                    icon,
+                    &cached.vertices,
+                    &cached.indices,
+                    &mut dynamic_path_vertices,
+                    &mut dynamic_path_indices,
+                );
+            }
+        }
+
+        Ok(PreparedFrameBatch {
+            dynamic_path_indices,
+            dynamic_path_vertices,
+            dynamic_rect_instances,
+            scene_cache_key: (frame.scene_cache_key != 0).then_some(frame.scene_cache_key),
+            dynamic_text_instances,
+        })
+    }
+
+    fn build_scene_batch_if_missing(
+        &mut self,
+        frame: &ResolvedFrame,
+        measurer: &dyn TextMeasurer,
+    ) -> Result<(), String> {
+        if self.scene_batches.contains_key(&frame.scene_cache_key) {
+            return Ok(());
+        }
+
+        let static_rect_instances = frame
+            .nodes
+            .iter()
+            .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Static)
+            .filter_map(|node| {
+                if let ResolvedNodeData::Rect(rect) = &node.data {
+                    Some(RectInstance::from_node(node, rect))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let static_text_nodes = frame
+            .nodes
+            .iter()
+            .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Static)
+            .filter_map(|node| {
+                if let ResolvedNodeData::Text(text) = &node.data {
+                    Some((node, text))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let static_text_atlas = self.build_text_atlas_cache(
+            &static_text_nodes,
+            measurer,
+            hash_text_nodes(&static_text_nodes),
+        );
+        let static_text_instances = static_text_atlas.as_ref().map(|cache| {
+            let instances = build_text_instances(cache, &static_text_nodes);
+            StaticBuffer::new(
+                &self.device,
+                "static_text_instances",
+                wgpu::BufferUsages::VERTEX,
+                &instances,
+            )
+        });
+
+        let mut static_path_vertices = Vec::new();
+        let mut static_path_indices = Vec::new();
+        for node in frame
+            .nodes
+            .iter()
+            .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Static)
+        {
+            if let ResolvedNodeData::Icon(icon) = &node.data {
+                let cached = self.cached_icon_geometry(icon);
+                path_pipeline::append_transformed_icon(
+                    node,
+                    icon,
+                    &cached.vertices,
+                    &cached.indices,
+                    &mut static_path_vertices,
+                    &mut static_path_indices,
+                );
+            }
+        }
+
+        let batch = CachedSceneBatch {
+            path_indices: (!static_path_indices.is_empty()).then(|| {
+                StaticBuffer::new(
+                    &self.device,
+                    "static_path_indices",
+                    wgpu::BufferUsages::INDEX,
+                    &static_path_indices,
+                )
+            }),
+            path_vertices: (!static_path_vertices.is_empty()).then(|| {
+                StaticBuffer::new(
+                    &self.device,
+                    "static_path_vertices",
+                    wgpu::BufferUsages::VERTEX,
+                    &static_path_vertices,
+                )
+            }),
+            rect_instances: (!static_rect_instances.is_empty()).then(|| {
+                StaticBuffer::new(
+                    &self.device,
+                    "static_rect_instances",
+                    wgpu::BufferUsages::VERTEX,
+                    &static_rect_instances,
+                )
+            }),
+            text_atlas: static_text_atlas,
+            text_instances: static_text_instances,
+        };
+        self.scene_batches.insert(frame.scene_cache_key, batch);
+        Ok(())
+    }
+
+    fn prepare_dynamic_text_atlas(
+        &mut self,
+        text_nodes: &[(&ResolvedNode, &ResolvedText)],
+        measurer: &dyn TextMeasurer,
+    ) {
+        if text_nodes.is_empty() {
+            self.dynamic_text_atlas_cache = None;
+            return;
+        }
+
+        let atlas_key = hash_text_nodes(text_nodes);
+        let should_rebuild = self
+            .dynamic_text_atlas_cache
+            .as_ref()
+            .is_none_or(|cache| cache.key != atlas_key);
+
+        if should_rebuild {
+            self.dynamic_text_atlas_cache =
+                self.build_text_atlas_cache(text_nodes, measurer, atlas_key);
+        }
+    }
+
+    fn build_text_atlas_cache(
+        &self,
+        text_nodes: &[(&ResolvedNode, &ResolvedText)],
+        measurer: &dyn TextMeasurer,
+        atlas_key: u64,
+    ) -> Option<TextAtlasCache> {
+        atlas::build_text_atlas(text_nodes, measurer).map(|atlas_build| {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("glyph_atlas"),
+                size: wgpu::Extent3d {
+                    width: atlas_build.width,
+                    height: atlas_build.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &atlas_build.pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(atlas_build.width),
+                    rows_per_image: Some(atlas_build.height),
+                },
+                wgpu::Extent3d {
+                    width: atlas_build.width,
+                    height: atlas_build.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let bind_group = self.text_pipeline.create_atlas_bind_group(
+                &self.device,
+                &view,
+                &self.atlas_sampler,
+            );
+            TextAtlasCache {
+                bind_group,
+                entries: atlas_build.entries,
+                key: atlas_key,
+                _texture: texture,
+                width: atlas_build.width,
+                height: atlas_build.height,
+            }
+        })
+    }
+
+    fn cached_icon_geometry(
+        &mut self,
+        icon: &crate::shared::types::ResolvedIcon,
+    ) -> &CachedPathGeometry {
+        let cache_key = hash_icon(icon);
+        self.path_cache.entry(cache_key).or_insert_with(|| {
+            let (vertices, indices) = path_pipeline::tessellate_icon(icon);
+            CachedPathGeometry { vertices, indices }
+        })
     }
 }
 
@@ -490,6 +813,34 @@ fn hash_text_nodes(nodes: &[(&ResolvedNode, &ResolvedText)]) -> u64 {
         hash_text_align(text.text_align, &mut hasher);
     }
     hasher.finish()
+}
+
+fn build_text_instances(
+    cache: &TextAtlasCache,
+    text_nodes: &[(&ResolvedNode, &ResolvedText)],
+) -> Vec<TextInstance> {
+    let text_node_lookup: HashMap<usize, &ResolvedNode> = text_nodes
+        .iter()
+        .map(|(node, _)| (node.source_index, *node))
+        .collect();
+    let mut text_instances = Vec::new();
+    let atlas_width = cache.width as f32;
+    let atlas_height = cache.height as f32;
+
+    for entry in &cache.entries {
+        if let Some(node) = text_node_lookup.get(&entry.source_index) {
+            for line in &entry.lines {
+                text_instances.push(TextInstance::from_line(
+                    node,
+                    line,
+                    atlas_width,
+                    atlas_height,
+                ));
+            }
+        }
+    }
+
+    text_instances
 }
 
 fn hash_icon(icon: &crate::shared::types::ResolvedIcon) -> u64 {
@@ -643,7 +994,8 @@ mod tests {
     use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, TextAlign};
     use crate::shared::types::{
-        ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+        ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+        ResolvedRect, ResolvedText,
     };
     use crate::text::SkiaTextMeasurer;
 
@@ -654,6 +1006,7 @@ mod tests {
             background: (255, 255, 255),
             nodes: vec![
                 ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
                     data: ResolvedNodeData::Rect(ResolvedRect {
                         width: 36.0,
                         height: 24.0,
@@ -674,6 +1027,7 @@ mod tests {
                     source_index: 0,
                 },
                 ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
                     data: ResolvedNodeData::Text(ResolvedText {
                         text: "GPU".to_string(),
                         color: (15, 23, 42),
@@ -695,6 +1049,7 @@ mod tests {
                     source_index: 1,
                 },
                 ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
                     data: ResolvedNodeData::Icon(ResolvedIcon {
                         width: 28.0,
                         height: 28.0,
@@ -727,6 +1082,7 @@ mod tests {
                     source_index: 2,
                 },
             ],
+            scene_cache_key: 0,
         };
 
         let measurer = SkiaTextMeasurer::new();

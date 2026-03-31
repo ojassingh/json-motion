@@ -255,9 +255,9 @@ impl TextBatch {
         pass: &mut wgpu::RenderPass<'rp>,
         atlas_bg: &'rp wgpu::BindGroup,
         instance_buf: &'rp wgpu::Buffer,
-        instances: &[TextInstance],
+        instance_count: usize,
     ) {
-        if instances.is_empty() {
+        if instance_count == 0 {
             return;
         }
 
@@ -265,6 +265,6 @@ impl TextBatch {
         pass.set_bind_group(1, atlas_bg, &[]);
         pass.set_vertex_buffer(0, pipeline.quad_vbuf.slice(..));
         pass.set_vertex_buffer(1, instance_buf.slice(..));
-        pass.draw(0..6, 0..instances.len() as u32);
+        pass.draw(0..6, 0..instance_count as u32);
     }
 }

@@ -215,7 +215,9 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
-    use crate::shared::types::{ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData};
+    use crate::shared::types::{
+        ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+    };
     use crate::text::SkiaTextMeasurer;
     use crate::text::TextMeasurer;
 
@@ -224,6 +226,7 @@ mod tests {
         let frame = ResolvedFrame {
             background: (255, 255, 255),
             nodes: vec![ResolvedNode {
+                batch_kind: ResolvedNodeBatchKind::Dynamic,
                 data: ResolvedNodeData::Icon(ResolvedIcon {
                     width: 48.0,
                     height: 48.0,
@@ -255,6 +258,7 @@ mod tests {
                 z_index: 0,
                 source_index: 0,
             }],
+            scene_cache_key: 0,
         };
         let measurer = SkiaTextMeasurer::new();
         let mut backend = CpuSkiaBackend::new();

@@ -1,21 +1,19 @@
+use std::collections::VecDeque;
+
 use wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
 
 use crate::render::FrameBuffer;
 
-/// A persistent GPU→CPU staging buffer.
-///
-/// `copy_texture_to_buffer` records a command to copy the current
-/// framebuffer texture into this buffer (accounting for the 256-byte row
-/// alignment wgpu requires).  `map_and_copy` then synchronously waits for
-/// the copy to complete and writes the de-padded rows into `FrameBuffer`.
-pub struct ReadbackBuffer {
+const READBACK_RING_SIZE: usize = 3;
+
+struct ReadbackSlot {
     buffer: wgpu::Buffer,
-    /// Aligned bytes per row (≥ width * 4, padded to COPY_BYTES_PER_ROW_ALIGNMENT).
+    /// Aligned bytes per row (>= width * 4, padded to COPY_BYTES_PER_ROW_ALIGNMENT).
     bytes_per_row_aligned: u32,
 }
 
-impl ReadbackBuffer {
-    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+impl ReadbackSlot {
+    fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
         let bytes_per_row_raw = width * 4;
         let bytes_per_row_aligned = align_up(bytes_per_row_raw, COPY_BYTES_PER_ROW_ALIGNMENT);
         let buffer_size = (bytes_per_row_aligned as u64) * (height as u64);
@@ -33,9 +31,7 @@ impl ReadbackBuffer {
         }
     }
 
-    /// Records a copy from `texture` into this staging buffer.
-    /// Must be called before `queue.submit`.
-    pub fn copy_from_texture(
+    fn copy_from_texture(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         texture: &wgpu::Texture,
@@ -65,9 +61,7 @@ impl ReadbackBuffer {
         );
     }
 
-    /// Blocks until the staging buffer is mapped, then copies de-padded rows
-    /// into `target.pixels`.
-    pub fn map_and_copy(
+    fn map_and_copy(
         &self,
         device: &wgpu::Device,
         target: &mut FrameBuffer,
@@ -80,12 +74,12 @@ impl ReadbackBuffer {
 
         device
             .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|e| format!("GPU poll error: {e}"))?;
+            .map_err(|error| format!("GPU poll error: {error}"))?;
 
         receiver
             .recv()
-            .map_err(|e| format!("readback channel closed: {e}"))?
-            .map_err(|e| format!("readback map_async failed: {e}"))?;
+            .map_err(|error| format!("readback channel closed: {error}"))?
+            .map_err(|error| format!("readback map_async failed: {error}"))?;
 
         {
             let mapped = slice.get_mapped_range();
@@ -104,6 +98,64 @@ impl ReadbackBuffer {
         }
 
         self.buffer.unmap();
+        Ok(())
+    }
+}
+
+/// A small rotating GPU->CPU staging queue that lets the renderer submit
+/// multiple frames before blocking on the oldest completed readback.
+pub struct ReadbackBuffer {
+    available_slots: Vec<usize>,
+    inflight_slots: VecDeque<usize>,
+    slots: Vec<ReadbackSlot>,
+}
+
+impl ReadbackBuffer {
+    pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        let slots = (0..READBACK_RING_SIZE)
+            .map(|_| ReadbackSlot::new(device, width, height))
+            .collect::<Vec<_>>();
+        let available_slots = (0..slots.len()).rev().collect();
+
+        Self {
+            available_slots,
+            inflight_slots: VecDeque::new(),
+            slots,
+        }
+    }
+
+    pub fn can_submit(&self) -> bool {
+        !self.available_slots.is_empty()
+    }
+
+    pub fn submit_copy(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let Some(slot_index) = self.available_slots.pop() else {
+            return Err("readback ring is full".to_string());
+        };
+
+        self.slots[slot_index].copy_from_texture(encoder, texture, width, height);
+        self.inflight_slots.push_back(slot_index);
+        Ok(())
+    }
+
+    pub fn collect_oldest(
+        &mut self,
+        device: &wgpu::Device,
+        target: &mut FrameBuffer,
+    ) -> Result<(), String> {
+        let Some(slot_index) = self.inflight_slots.pop_front() else {
+            return Err("no inflight GPU readback is available".to_string());
+        };
+
+        let slot = &self.slots[slot_index];
+        slot.map_and_copy(device, target)?;
+        self.available_slots.push(slot_index);
         Ok(())
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use indexmap::IndexMap;
 
@@ -12,7 +13,8 @@ use crate::shared::consts::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_SCENE_BG, DEFAULT_TEXT_COLOR,
 };
 use crate::shared::types::{
-    ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+    ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+    ResolvedRect, ResolvedText,
 };
 use crate::text::TextMeasurer;
 
@@ -60,6 +62,8 @@ pub struct PrecomputedScene<'a> {
     pub(crate) fps: f64,
     node_tracks: HashMap<String, NodeTracks>,
     pub(crate) nodes: &'a IndexMap<String, Node>,
+    render_batch_kinds: HashMap<String, ResolvedNodeBatchKind>,
+    pub(crate) render_cache_key: u64,
     pub(crate) start_frame: u32,
 }
 
@@ -92,6 +96,12 @@ impl NodeTracks {
             .get(property)
             .map_or(base, |track| track.resolve(base, t))
     }
+
+    fn has_any(&self, properties: &[&'static str]) -> bool {
+        properties
+            .iter()
+            .any(|property| self.numeric.contains_key(property) || self.colors.contains_key(property))
+    }
 }
 
 impl<'a> PrecomputedScene<'a> {
@@ -108,7 +118,7 @@ impl<'a> PrecomputedScene<'a> {
             .start_frame
             .checked_add(scene.duration)
             .ok_or_else(|| format!("scene {} frame range overflowed", scene.id))?;
-        let node_tracks = scene
+        let node_tracks: HashMap<String, NodeTracks> = scene
             .nodes
             .keys()
             .map(|id| {
@@ -116,6 +126,7 @@ impl<'a> PrecomputedScene<'a> {
                 (id.clone(), NodeTracks::compile(&events))
             })
             .collect();
+        let has_layout_nodes = scene.nodes.values().any(Node::is_layout);
         let bg_hex = scene
             .background
             .as_deref()
@@ -131,6 +142,27 @@ impl<'a> PrecomputedScene<'a> {
         } else {
             None
         };
+        let render_batch_kinds = scene
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                if node.is_layout() {
+                    None
+                } else {
+                    let default_tracks = NodeTracks::default();
+                    let tracks = node_tracks.get(id).unwrap_or(&default_tracks);
+                    Some((
+                        id.clone(),
+                        classify_render_batch_kind(
+                            node,
+                            tracks,
+                            has_layout_nodes,
+                            cached_layout.is_some(),
+                        ),
+                    ))
+                }
+            })
+            .collect();
 
         Ok(Self {
             background: color::parse_hex(bg_hex),
@@ -139,6 +171,8 @@ impl<'a> PrecomputedScene<'a> {
             fps: desc.fps,
             node_tracks,
             nodes: &scene.nodes,
+            render_batch_kinds,
+            render_cache_key: compute_scene_render_cache_key(scene),
             start_frame: scene.start_frame,
         })
     }
@@ -171,6 +205,14 @@ fn scene_has_static_layout(scene: &SceneEntry) -> bool {
     !scene.timeline.iter().any(event_affects_layout)
 }
 
+fn compute_scene_render_cache_key(scene: &SceneEntry) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    scene.id.hash(&mut hasher);
+    scene.start_frame.hash(&mut hasher);
+    scene.duration.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn event_affects_layout(event: &TimelineEvent) -> bool {
     event.x.is_some()
         || event.y.is_some()
@@ -179,6 +221,37 @@ fn event_affects_layout(event: &TimelineEvent) -> bool {
         || event.width.is_some()
         || event.height.is_some()
         || event.size.is_some()
+}
+
+fn classify_render_batch_kind(
+    node: &Node,
+    tracks: &NodeTracks,
+    has_layout_nodes: bool,
+    has_static_layout: bool,
+) -> ResolvedNodeBatchKind {
+    if has_layout_nodes && !has_static_layout {
+        return ResolvedNodeBatchKind::Dynamic;
+    }
+
+    const BASE_DYNAMIC_PROPS: [&str; 10] = [
+        "opacity", "x", "y", "dx", "dy", "rotate", "scaleX", "scaleY", "skewX", "skewY",
+    ];
+    if tracks.has_any(&BASE_DYNAMIC_PROPS) {
+        return ResolvedNodeBatchKind::Dynamic;
+    }
+
+    let node_dynamic_props: &[&str] = match node {
+        Node::Icon(_) => &["width", "height", "strokeWidth", "fill", "stroke"],
+        Node::Rect(_) => &["width", "height", "cornerRadius", "strokeWidth", "fill", "stroke"],
+        Node::Text(_) => &["size", "color"],
+        _ => &[],
+    };
+
+    if tracks.has_any(node_dynamic_props) {
+        ResolvedNodeBatchKind::Dynamic
+    } else {
+        ResolvedNodeBatchKind::Static
+    }
 }
 
 fn scene_for_frame<'a>(
@@ -283,6 +356,7 @@ fn base_mut(node: &mut Node) -> &mut NodeBase {
 
 fn resolve_common(
     base: &NodeBase,
+    batch_kind: ResolvedNodeBatchKind,
     tracks: &NodeTracks,
     layout_pos: (f64, f64),
     source_index: usize,
@@ -291,6 +365,7 @@ fn resolve_common(
 ) -> ResolvedNode {
     let scale = base.scale.unwrap_or(1.0);
     ResolvedNode {
+        batch_kind,
         data,
         opacity: tracks.num("opacity", base.opacity.unwrap_or(1.0), t),
         rotation: tracks.num("rotate", base.rotate.unwrap_or(0.0), t),
@@ -307,6 +382,7 @@ fn resolve_common(
 
 fn resolve_node(
     node: &Node,
+    batch_kind: ResolvedNodeBatchKind,
     tracks: &NodeTracks,
     layout_pos: (f64, f64),
     source_index: usize,
@@ -323,6 +399,7 @@ fn resolve_node(
                 .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
             Some(resolve_common(
                 &icon.base,
+                batch_kind,
                 tracks,
                 layout_pos,
                 source_index,
@@ -347,6 +424,7 @@ fn resolve_node(
         }
         Node::Rect(rect) => Some(resolve_common(
             &rect.base,
+            batch_kind,
             tracks,
             layout_pos,
             source_index,
@@ -377,6 +455,7 @@ fn resolve_node(
                 .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
             Some(resolve_common(
                 &text.base,
+                batch_kind,
                 tracks,
                 layout_pos,
                 source_index,
@@ -407,6 +486,7 @@ pub fn resolve_frame_fast(
         return Ok(ResolvedFrame {
             background: compiled.background,
             nodes: vec![],
+            scene_cache_key: 0,
         });
     };
 
@@ -438,7 +518,11 @@ pub fn resolve_frame_fast(
             .ok_or_else(|| format!("missing layout position for node {id}"))?;
         let default_tracks = NodeTracks::default();
         let tracks = scene.node_tracks.get(id).unwrap_or(&default_tracks);
-        if let Some(resolved) = resolve_node(node, tracks, pos, source_index, t) {
+        let batch_kind = *scene
+            .render_batch_kinds
+            .get(id)
+            .unwrap_or(&ResolvedNodeBatchKind::Dynamic);
+        if let Some(resolved) = resolve_node(node, batch_kind, tracks, pos, source_index, t) {
             nodes.push(resolved);
         }
     }
@@ -452,5 +536,6 @@ pub fn resolve_frame_fast(
     Ok(ResolvedFrame {
         background: scene.background,
         nodes,
+        scene_cache_key: scene.render_cache_key,
     })
 }
