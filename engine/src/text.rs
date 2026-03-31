@@ -188,11 +188,7 @@ fn measure_text(
     } else {
         line_count * line_height
     };
-    let baseline_offset = if has_ink {
-        -top
-    } else {
-        font_size as f32
-    };
+    let baseline_offset = if has_ink { -top } else { font_size as f32 };
 
     MeasuredText {
         width,

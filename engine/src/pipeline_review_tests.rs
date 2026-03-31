@@ -1,15 +1,7 @@
 use indexmap::IndexMap;
 
 use crate::animation::{compile_video, total_frame_count};
-use crate::schema::{
-    AlignNode,
-    Anchor,
-    Node,
-    NodeBase,
-    RectNode,
-    SceneEntry,
-    VideoDescription,
-};
+use crate::schema::{AlignNode, Anchor, Node, NodeBase, RectNode, SceneEntry, VideoDescription};
 use crate::text::SkiaTextMeasurer;
 
 fn video_with_scene(scene: SceneEntry) -> VideoDescription {
@@ -154,7 +146,10 @@ fn total_frame_count_should_return_error_for_zero_duration_scene() {
 
     let result = total_frame_count(&desc);
 
-    assert_eq!(result, Err("scene scene-1 has invalid duration 0".to_string()));
+    assert_eq!(
+        result,
+        Err("scene scene-1 has invalid duration 0".to_string())
+    );
 }
 
 #[test]

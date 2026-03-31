@@ -1,22 +1,13 @@
 use skia_safe::{
-    paint,
-    surfaces,
-    AlphaType,
-    Color,
-    ColorType,
-    Font,
-    ImageInfo,
-    Matrix,
-    Paint,
-    Rect,
-    RRect,
-    Surface,
-    TextBlob,
+    paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Matrix, Paint, RRect, Rect,
+    Surface, TextBlob,
 };
 
 use crate::icon;
 use crate::schema::TextAlign;
-use crate::shared::types::{ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText};
+use crate::shared::types::{
+    ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+};
 use crate::text::{self, TextMeasurer};
 
 pub struct FrameBuffer {
@@ -71,7 +62,8 @@ impl CpuSkiaBackend {
 
     fn surface(&mut self, width: u32, height: u32) -> Result<&mut Surface, String> {
         let recreate = self.surface.as_ref().is_none_or(|surface| {
-            surface.image_info().width() != width as i32 || surface.image_info().height() != height as i32
+            surface.image_info().width() != width as i32
+                || surface.image_info().height() != height as i32
         });
         if recreate {
             self.surface = Some(
@@ -118,7 +110,12 @@ pub(crate) fn make_paint(alpha: u8, (r, g, b): (u8, u8, u8), style: paint::Style
     paint
 }
 
-pub(crate) fn apply_node_transform(canvas: &skia_safe::Canvas, node: &ResolvedNode, w: f32, h: f32) {
+pub(crate) fn apply_node_transform(
+    canvas: &skia_safe::Canvas,
+    node: &ResolvedNode,
+    w: f32,
+    h: f32,
+) {
     let cx = w / 2.0;
     let cy = h / 2.0;
     canvas.translate((node.x as f32 + cx, node.y as f32 + cy));
@@ -167,7 +164,9 @@ fn draw_text(
     measurer: &dyn TextMeasurer,
 ) {
     let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
-    let Some(resolved_typeface) = text::resolve_typeface(text.font_family.as_deref(), measurer.default_typeface()) else {
+    let Some(resolved_typeface) =
+        text::resolve_typeface(text.font_family.as_deref(), measurer.default_typeface())
+    else {
         return;
     };
     let measured = measurer.measure_resolved_text(text);
@@ -215,10 +214,10 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-    use crate::text::TextMeasurer;
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
     use crate::shared::types::{ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData};
     use crate::text::SkiaTextMeasurer;
+    use crate::text::TextMeasurer;
 
     #[test]
     fn icon_rendering_should_paint_non_background_pixels() {

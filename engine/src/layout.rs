@@ -12,7 +12,8 @@ fn roots(nodes: &indexmap::IndexMap<String, Node>) -> Vec<String> {
             child_ids.insert(child_id.as_str());
         }
     }
-    nodes.keys()
+    nodes
+        .keys()
         .filter(|id| !child_ids.contains(id.as_str()))
         .cloned()
         .collect()
@@ -145,13 +146,7 @@ fn build_tree(
     let mut child_nodes = Vec::with_capacity(node.children().len());
     for child_id in node.children() {
         child_nodes.push(build_tree(
-            child_id,
-            false,
-            nodes,
-            measurer,
-            tree,
-            built,
-            visiting,
+            child_id, false, nodes, measurer, tree, built, visiting,
         )?);
     }
 
@@ -228,12 +223,12 @@ pub fn resolve_layout(
 
     let root = tree
         .new_with_children(
-        Style {
-            size: fixed_size(frame_w, frame_h),
-            ..Default::default()
-        },
-        &root_children,
-    )
+            Style {
+                size: fixed_size(frame_w, frame_h),
+                ..Default::default()
+            },
+            &root_children,
+        )
         .map_err(|error| format!("failed to create root layout node: {error}"))?;
 
     tree.compute_layout(root, Size::MAX_CONTENT)

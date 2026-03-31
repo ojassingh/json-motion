@@ -4,31 +4,17 @@ use indexmap::IndexMap;
 
 use crate::color;
 use crate::layout;
-use crate::shared::consts::{
-    DEFAULT_FONT_SIZE,
-    DEFAULT_LINE_HEIGHT_MULT,
-    DEFAULT_SCENE_BG,
-    DEFAULT_TEXT_COLOR,
-};
-use crate::shared::types::{
-    ResolvedFrame,
-    ResolvedIcon,
-    ResolvedNode,
-    ResolvedNodeData,
-    ResolvedRect,
-    ResolvedText,
-};
-use crate::text::TextMeasurer;
 use crate::schema::{
-    IconLineCap,
-    IconLineJoin,
-    Node,
-    NodeBase,
-    SceneEntry,
-    TextAlign,
-    TimelineEvent,
+    IconLineCap, IconLineJoin, Node, NodeBase, SceneEntry, TextAlign, TimelineEvent,
     VideoDescription,
 };
+use crate::shared::consts::{
+    DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_SCENE_BG, DEFAULT_TEXT_COLOR,
+};
+use crate::shared::types::{
+    ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+};
+use crate::text::TextMeasurer;
 
 use super::segments::{ColorTrack, NumTrack};
 use super::timeline::get_node_events;
@@ -81,11 +67,15 @@ impl NodeTracks {
     fn compile(events: &[TimelineEvent]) -> Self {
         let numeric = NUMERIC_TRACK_PROPERTIES
             .into_iter()
-            .filter_map(|property| NumTrack::compile(events, property).map(|track| (property, track)))
+            .filter_map(|property| {
+                NumTrack::compile(events, property).map(|track| (property, track))
+            })
             .collect();
         let colors = COLOR_TRACK_PROPERTIES
             .into_iter()
-            .filter_map(|property| ColorTrack::compile(events, property).map(|track| (property, track)))
+            .filter_map(|property| {
+                ColorTrack::compile(events, property).map(|track| (property, track))
+            })
             .collect();
 
         Self { colors, numeric }
@@ -254,27 +244,18 @@ fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
                 Some(icon.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
                 t,
             );
-            icon.stroke_width = Some(tracks.num(
-                "strokeWidth",
-                icon.stroke_width.unwrap_or(2.0),
-                t,
-            ));
+            icon.stroke_width =
+                Some(tracks.num("strokeWidth", icon.stroke_width.unwrap_or(2.0), t));
         }
         Node::Rect(rect) => {
             rect.width = tracks.num("width", rect.width, t);
             rect.height = tracks.num("height", rect.height, t);
             rect.fill = tracks.color("fill", rect.fill.as_deref(), t);
             rect.stroke = tracks.color("stroke", rect.stroke.as_deref(), t);
-            rect.stroke_width = Some(tracks.num(
-                "strokeWidth",
-                rect.stroke_width.unwrap_or(0.0),
-                t,
-            ));
-            rect.corner_radius = Some(tracks.num(
-                "cornerRadius",
-                rect.corner_radius.unwrap_or(0.0),
-                t,
-            ));
+            rect.stroke_width =
+                Some(tracks.num("strokeWidth", rect.stroke_width.unwrap_or(0.0), t));
+            rect.corner_radius =
+                Some(tracks.num("cornerRadius", rect.corner_radius.unwrap_or(0.0), t));
         }
         Node::Text(text) => {
             let font_size = tracks.num("size", text.size.unwrap_or(DEFAULT_FONT_SIZE), t);
