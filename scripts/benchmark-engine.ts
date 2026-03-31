@@ -73,6 +73,16 @@ const CASES: BenchmarkCase[] = [
     threshold: { maxAvgChannelDiff: 14, maxChangedPixelRatio: 0.22 },
   },
   {
+    name: "mixed-static-long",
+    description: createMixedStaticLong(),
+    threshold: { maxAvgChannelDiff: 14, maxChangedPixelRatio: 0.22 },
+  },
+  {
+    name: "rect-animate-long",
+    description: createRectAnimateLong(),
+    threshold: { maxAvgChannelDiff: 8, maxChangedPixelRatio: 0.12 },
+  },
+  {
     name: "long-form",
     description: createLongForm(),
     threshold: { maxAvgChannelDiff: 14, maxChangedPixelRatio: 0.22 },
@@ -319,6 +329,57 @@ function createLongForm() {
     ...desc.scenes[0],
     duration: 7200,
   };
+  return desc;
+}
+
+function createMixedStaticLong() {
+  const desc = createMixedDense();
+  desc.scenes[0] = {
+    ...desc.scenes[0],
+    duration: 7200,
+    timeline: [],
+  };
+  return desc;
+}
+
+function createRectAnimateLong() {
+  const desc = createBaseDescription();
+  const nodes: Record<string, unknown> = {};
+
+  let rectId = 0;
+  for (let row = 0; row < 24; row++) {
+    for (let col = 0; col < 30; col++) {
+      const id = `rect${rectId}`;
+      nodes[id] = {
+        cornerRadius: 4,
+        fill: (row + col) % 2 === 0 ? "#0f172a" : "#38bdf8",
+        height: 18,
+        opacity: 0.85,
+        type: "rect",
+        width: 18,
+        x: 18 + col * 40,
+        y: 18 + row * 28,
+      };
+      rectId += 1;
+    }
+  }
+
+  desc.scenes.push({
+    duration: 7200,
+    id: "scene1",
+    nodes,
+    startFrame: 0,
+    timeline: [
+      {
+        at: 0.15,
+        dur: 0.7,
+        dx: 12,
+        ease: "ease-in-out",
+        target: Object.keys(nodes),
+      },
+    ],
+  });
+
   return desc;
 }
 
