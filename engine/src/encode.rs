@@ -1,4 +1,3 @@
-use ffmpeg_next as ffmpeg;
 use ffmpeg::codec;
 use ffmpeg::codec::encoder;
 use ffmpeg::format;
@@ -6,6 +5,7 @@ use ffmpeg::frame;
 use ffmpeg::software::scaling;
 use ffmpeg::util::format::pixel::Pixel;
 use ffmpeg::util::rational::Rational;
+use ffmpeg_next as ffmpeg;
 use std::time::{Duration, Instant};
 
 use crate::render::FrameBuffer;
@@ -46,7 +46,12 @@ fn choose_pixel_format(codec: ffmpeg::Codec) -> Result<Pixel, String> {
         .ok_or_else(|| format!("encoder {} has no supported pixel formats", codec.name()))
 }
 
-fn copy_rgba_frame(frame: &mut frame::Video, pixels: &[u8], width: usize, height: usize) -> Result<(), String> {
+fn copy_rgba_frame(
+    frame: &mut frame::Video,
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<(), String> {
     let expected_len = width
         .checked_mul(height)
         .and_then(|value| value.checked_mul(4))
@@ -129,12 +134,11 @@ where
     let fps_i32 = fps_value as i32;
     let time_base = Rational(1, fps_i32);
 
-    let codec = encoder::find_by_name(codec)
-        .ok_or_else(|| format!("unknown encoder: {codec}"))?;
+    let codec = encoder::find_by_name(codec).ok_or_else(|| format!("unknown encoder: {codec}"))?;
     let pixel_format = choose_pixel_format(codec)?;
 
-    let mut output =
-        format::output(&output_path).map_err(|error| format!("failed to open output {output_path}: {error}"))?;
+    let mut output = format::output(&output_path)
+        .map_err(|error| format!("failed to open output {output_path}: {error}"))?;
     let global_header = output
         .format()
         .flags()

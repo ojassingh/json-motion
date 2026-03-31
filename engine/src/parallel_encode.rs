@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use std::{fs, thread};
 
 use crate::animation::{self, CompiledVideo};
@@ -7,20 +8,29 @@ use crate::render::RenderBackend;
 use crate::schema::VideoDescription;
 use crate::text::{SkiaTextMeasurer, TextMeasurer};
 
+pub struct ParallelEncodeRequest<'a> {
+    pub codec: &'a str,
+    pub frame_count: usize,
+    pub num_workers: usize,
+    pub output_path: &'a str,
+}
+
 pub fn parallel_encode(
     desc: &VideoDescription,
     compiled: &CompiledVideo<'_>,
     measurer: &SkiaTextMeasurer,
-    codec: &str,
-    output_path: &str,
-    frame_count: usize,
-    num_workers: usize,
+    request: ParallelEncodeRequest<'_>,
     make_backend: fn(u32, u32) -> Result<Box<dyn RenderBackend>, String>,
 ) -> Result<EncodeTimings, String> {
-    if num_workers <= 1 || frame_count < num_workers * 2 {
+    if request.num_workers <= 1 || request.frame_count < request.num_workers * 2 {
         let mut backend = make_backend(desc.width, desc.height)?;
         let timings = encode::encode(
-            desc.width, desc.height, desc.fps, codec, output_path, frame_count,
+            desc.width,
+            desc.height,
+            desc.fps,
+            request.codec,
+            request.output_path,
+            request.frame_count,
             |frame_index, target| {
                 let frame = animation::resolve_frame_fast(compiled, frame_index as u32, measurer)?;
                 backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
@@ -29,20 +39,22 @@ pub fn parallel_encode(
         return Ok(timings);
     }
 
-    let chunk_size = (frame_count + num_workers - 1) / num_workers;
-    let tmp_dir = Path::new(output_path).parent().unwrap_or(Path::new("."));
+    let chunk_size = request.frame_count.div_ceil(request.num_workers);
+    let tmp_dir = Path::new(request.output_path)
+        .parent()
+        .unwrap_or(Path::new("."));
     let tmp_prefix = format!(".chunk_{}", std::process::id());
 
     let mut chunk_files: Vec<PathBuf> = Vec::new();
     let mut ranges: Vec<(usize, usize)> = Vec::new();
 
-    for i in 0..num_workers {
+    for i in 0..request.num_workers {
         let from = i * chunk_size;
-        let to = ((i + 1) * chunk_size).min(frame_count);
+        let to = ((i + 1) * chunk_size).min(request.frame_count);
         if from >= to {
             break;
         }
-        let file = tmp_dir.join(format!("{tmp_prefix}_{i}.mp4"));
+        let file = tmp_dir.join(format!("{tmp_prefix}_{i}.mkv"));
         chunk_files.push(file);
         ranges.push((from, to));
     }
@@ -50,8 +62,9 @@ pub fn parallel_encode(
     let width = desc.width;
     let height = desc.height;
     let fps = desc.fps;
-    let codec_str = codec.to_string();
+    let codec_str = request.codec.to_string();
 
+    let processing_started = Instant::now();
     let errors: Vec<Result<EncodeTimings, String>> = thread::scope(|scope| {
         let handles: Vec<_> = ranges
             .iter()
@@ -64,14 +77,24 @@ pub fn parallel_encode(
                     let mut backend = make_backend(width, height)?;
 
                     encode::encode(
-                        width, height, fps, codec_ref, &path_str,
+                        width,
+                        height,
+                        fps,
+                        codec_ref,
+                        &path_str,
                         to - from,
                         |local_index, target| {
                             let global_index = from + local_index;
                             let frame = animation::resolve_frame_fast(
-                                compiled, global_index as u32, &local_measurer,
+                                compiled,
+                                global_index as u32,
+                                &local_measurer,
                             )?;
-                            backend.render_into(&frame, target, &local_measurer as &dyn TextMeasurer)
+                            backend.render_into(
+                                &frame,
+                                target,
+                                &local_measurer as &dyn TextMeasurer,
+                            )
                         },
                     )
                 })
@@ -80,27 +103,32 @@ pub fn parallel_encode(
 
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
+    let chunk_processing_elapsed = processing_started.elapsed();
 
-    let mut render = EncodeTimings {
-        render: std::time::Duration::ZERO,
-        encode: std::time::Duration::ZERO,
-    };
     for result in errors {
-        let timings = result?;
-        render.render += timings.render;
-        render.encode += timings.encode;
+        result?;
     }
 
-    concat_segments(&chunk_files, output_path, codec)?;
+    let concat_started = Instant::now();
+    let concat_result = concat_segments(&chunk_files, request.output_path);
+    let concat_elapsed = concat_started.elapsed();
 
-    for f in &chunk_files {
-        let _ = fs::remove_file(f);
-    }
+    cleanup_files(&chunk_files);
+    concat_result?;
 
-    Ok(render)
+    Ok(EncodeTimings {
+        render: chunk_processing_elapsed,
+        encode: concat_elapsed,
+    })
 }
 
-fn concat_segments(segments: &[PathBuf], output: &str, codec: &str) -> Result<(), String> {
+fn cleanup_files(paths: &[PathBuf]) {
+    for path in paths {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn concat_segments(segments: &[PathBuf], output: &str) -> Result<(), String> {
     let list_path = Path::new(output)
         .parent()
         .unwrap_or(Path::new("."))
@@ -117,30 +145,53 @@ fn concat_segments(segments: &[PathBuf], output: &str, codec: &str) -> Result<()
     fs::write(&list_path, &list_content)
         .map_err(|e| format!("failed to write concat list: {e}"))?;
 
-    let status = std::process::Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            list_path.to_str().unwrap(),
-            "-c:v",
-            codec,
-            output,
-        ])
+    let output_result = std::process::Command::new("ffmpeg")
+        .args(concat_command_args(&list_path, output))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
+        .stderr(std::process::Stdio::piped())
+        .output()
         .map_err(|e| format!("failed to run ffmpeg concat: {e}"))?;
 
     let _ = fs::remove_file(&list_path);
 
-    if status.success() {
+    if output_result.status.success() {
         Ok(())
     } else {
-        Err(format!("ffmpeg concat exited with {status}"))
+        let stderr = String::from_utf8_lossy(&output_result.stderr);
+        Err(format!(
+            "ffmpeg concat exited with {}: {}",
+            output_result.status,
+            stderr.trim()
+        ))
+    }
+}
+
+fn concat_command_args<'a>(list_path: &'a Path, output: &'a str) -> [&'a str; 10] {
+    [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        list_path.to_str().unwrap(),
+        "-c",
+        "copy",
+        output,
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::concat_command_args;
+
+    #[test]
+    fn concat_command_should_stream_copy_segments() {
+        let args = concat_command_args(Path::new("/tmp/segments.txt"), "/tmp/out.mp4");
+        assert!(args.contains(&"-c"));
+        assert!(args.contains(&"copy"));
     }
 }

@@ -21,22 +21,68 @@ use std::process;
 use crate::render::RenderBackend;
 use crate::text::TextMeasurer;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BackendRequest {
+    Auto,
+    Cpu,
+    Gpu,
+}
+
+impl BackendRequest {
+    fn from_args(args: &[String]) -> Result<Self, String> {
+        let request = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("--backend="))
+            .unwrap_or("auto");
+        match request {
+            "auto" => Ok(Self::Auto),
+            "cpu" => Ok(Self::Cpu),
+            "gpu" => Ok(Self::Gpu),
+            other => Err(format!(
+                "unsupported backend '{other}'; expected --backend=auto|cpu|gpu"
+            )),
+        }
+    }
+
+    fn wants_gpu(self) -> bool {
+        !matches!(self, Self::Cpu)
+    }
+
+    fn requires_gpu(self) -> bool {
+        matches!(self, Self::Gpu)
+    }
+}
+
+struct EncodeRequest<'a> {
+    backend: BackendRequest,
+    codec: &'a str,
+    output_path: &'a str,
+    parallel_workers: usize,
+    total_frames: usize,
+}
+
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        return Err("Usage: engine <input.json> <output.mp4> [codec] [--backend=gpu|cpu]".to_string());
+        return Err(
+            "Usage: engine <input.json> <output.mp4> [codec] [--backend=auto|gpu|cpu]".to_string(),
+        );
     }
 
     let input_path = &args[1];
     let output_path = &args[2];
 
-    let force_cpu = args.iter().any(|a| a == "--backend=cpu");
-    let use_gpu = !force_cpu && (cfg!(feature = "gpu") || args.iter().any(|a| a == "--backend=gpu"));
+    let backend_request = BackendRequest::from_args(&args)?;
     let parallel_workers = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--parallel-workers="))
         .and_then(|value| value.parse::<usize>().ok())
-        .or_else(|| env::var("VIDEO_RENDER_PARALLEL_WORKERS").ok()?.parse::<usize>().ok())
+        .or_else(|| {
+            env::var("VIDEO_RENDER_PARALLEL_WORKERS")
+                .ok()?
+                .parse::<usize>()
+                .ok()
+        })
         .unwrap_or(1);
 
     let codec = args
@@ -45,7 +91,7 @@ fn run() -> Result<(), String> {
         .cloned()
         .or_else(|| env::var("VIDEO_RENDER_CODEC").ok())
         .unwrap_or_else(|| {
-            if use_gpu {
+            if backend_request.wants_gpu() {
                 encode::pick_best_h264_encoder()
             } else {
                 "libx264".to_string()
@@ -68,10 +114,14 @@ fn run() -> Result<(), String> {
 
     eprintln!("rendering and encoding {total} frames...");
 
-    let timings = run_encode(
-        &desc, &compiled, &measurer, &codec, output_path,
-        total as usize, use_gpu, parallel_workers,
-    )?;
+    let request = EncodeRequest {
+        backend: backend_request,
+        codec: &codec,
+        output_path,
+        parallel_workers,
+        total_frames: total as usize,
+    };
+    let timings = run_encode(&desc, &compiled, &measurer, request)?;
 
     eprintln!(
         "timings: render={:.2}ms, encode={:.2}ms",
@@ -87,61 +137,88 @@ fn run_encode(
     desc: &schema::VideoDescription,
     compiled: &animation::CompiledVideo<'_>,
     measurer: &text::SkiaTextMeasurer,
-    codec: &str,
-    output_path: &str,
-    total: usize,
-    use_gpu: bool,
-    parallel_workers: usize,
+    request: EncodeRequest<'_>,
 ) -> Result<encode::EncodeTimings, String> {
+    let use_gpu = request.backend.wants_gpu();
+
     #[cfg(feature = "gpu")]
     if use_gpu {
-        if parallel_workers > 1 {
-            eprintln!("backend=gpu (wgpu), parallel_workers={parallel_workers}");
-            return parallel_encode::parallel_encode(
-                desc,
-                compiled,
-                measurer,
-                codec,
-                output_path,
-                total,
-                parallel_workers,
-                gpu_backend_factory,
-            );
-        }
-        match gpu::WgpuBackend::new(desc.width, desc.height) {
-            Ok(mut backend) => {
-                eprintln!("backend=gpu (wgpu)");
-                return encode::encode(
-                    desc.width, desc.height, desc.fps, codec, output_path, total,
-                    |frame_index, target| {
-                        let frame = animation::resolve_frame_fast(
-                            compiled, frame_index as u32, measurer,
-                        )?;
-                        backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
+        let gpu_available = match gpu_backend_factory(desc.width, desc.height) {
+            Ok(_) => true,
+            Err(error) => {
+                if request.backend.requires_gpu() {
+                    return Err(format!(
+                        "GPU backend requested explicitly but initialization failed: {error}"
+                    ));
+                }
+                eprintln!("GPU init failed ({error}); falling back to CPU");
+                false
+            }
+        };
+        if gpu_available {
+            if request.parallel_workers > 1 {
+                eprintln!(
+                    "backend=gpu (wgpu), parallel_workers={}",
+                    request.parallel_workers
+                );
+                return parallel_encode::parallel_encode(
+                    desc,
+                    compiled,
+                    measurer,
+                    parallel_encode::ParallelEncodeRequest {
+                        codec: request.codec,
+                        output_path: request.output_path,
+                        frame_count: request.total_frames,
+                        num_workers: request.parallel_workers,
                     },
+                    gpu_backend_factory,
                 );
             }
-            Err(e) => {
-                eprintln!("GPU init failed ({e}); falling back to CPU");
-            }
+            let mut backend = gpu::WgpuBackend::new(desc.width, desc.height)
+                .map_err(|error| format!("failed to initialize GPU backend: {error}"))?;
+            eprintln!("backend=gpu (wgpu)");
+            return encode::encode(
+                desc.width,
+                desc.height,
+                desc.fps,
+                request.codec,
+                request.output_path,
+                request.total_frames,
+                |frame_index, target| {
+                    let frame =
+                        animation::resolve_frame_fast(compiled, frame_index as u32, measurer)?;
+                    backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
+                },
+            );
         }
     }
 
     #[cfg(not(feature = "gpu"))]
     if use_gpu {
+        if request.backend.requires_gpu() {
+            return Err(
+                "GPU backend requested explicitly but engine was built without the 'gpu' feature"
+                    .to_string(),
+            );
+        }
         eprintln!("warning: engine built without the 'gpu' feature, using CPU");
     }
 
-    if parallel_workers > 1 {
-        eprintln!("backend=cpu (skia), parallel_workers={parallel_workers}");
+    if request.parallel_workers > 1 {
+        eprintln!(
+            "backend=cpu (skia), parallel_workers={}",
+            request.parallel_workers
+        );
         return parallel_encode::parallel_encode(
             desc,
             compiled,
             measurer,
-            codec,
-            output_path,
-            total,
-            parallel_workers,
+            parallel_encode::ParallelEncodeRequest {
+                codec: request.codec,
+                output_path: request.output_path,
+                frame_count: request.total_frames,
+                num_workers: request.parallel_workers,
+            },
             cpu_backend_factory,
         );
     }
@@ -149,7 +226,12 @@ fn run_encode(
     eprintln!("backend=cpu (skia)");
     let mut backend = render::CpuSkiaBackend::new();
     encode::encode(
-        desc.width, desc.height, desc.fps, codec, output_path, total,
+        desc.width,
+        desc.height,
+        desc.fps,
+        request.codec,
+        request.output_path,
+        request.total_frames,
         |frame_index, target| {
             let frame = animation::resolve_frame_fast(compiled, frame_index as u32, measurer)?;
             backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
@@ -170,5 +252,29 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
         process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BackendRequest;
+
+    #[test]
+    fn backend_request_should_parse_supported_values() {
+        let args = vec!["engine".to_string(), "--backend=gpu".to_string()];
+        assert_eq!(BackendRequest::from_args(&args), Ok(BackendRequest::Gpu));
+
+        let args = vec!["engine".to_string(), "--backend=cpu".to_string()];
+        assert_eq!(BackendRequest::from_args(&args), Ok(BackendRequest::Cpu));
+
+        let args = vec!["engine".to_string()];
+        assert_eq!(BackendRequest::from_args(&args), Ok(BackendRequest::Auto));
+    }
+
+    #[test]
+    fn backend_request_should_reject_unknown_values() {
+        let args = vec!["engine".to_string(), "--backend=metal".to_string()];
+        let error = BackendRequest::from_args(&args).expect_err("backend should be rejected");
+        assert!(error.contains("unsupported backend 'metal'"));
     }
 }
