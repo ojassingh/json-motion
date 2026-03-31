@@ -1,3 +1,99 @@
+- [x] Fix explicit GPU backend requests so they fail closed instead of silently falling back to CPU.
+- [x] Change parallel chunk merging to remux with stream copy instead of re-encoding chunk outputs.
+- [x] Replace summed worker timings with wall-clock timing buckets for parallel export and include merge time.
+- [x] Re-run engine verification and targeted runtime smoke checks.
+
+---
+
+## Parallel Export Findings Fix
+
+### Review
+
+- Explicit `--backend=gpu` requests now fail closed if the binary was built without the `gpu` feature or if GPU backend initialization fails; only auto-selection is allowed to fall back to CPU.
+- Parallel export now writes intermediate chunk files as `.mkv` and concatenates them with `ffmpeg -c copy`, so the final merge remuxes the chunk outputs instead of running a second full encode pass.
+- Parallel mode now reports wall-clock timing buckets instead of summed worker timings: `render` covers the parallel chunk-processing window and `encode` covers the final concat/remux step, which keeps the existing API shape while making the total truthful again.
+- Improved concat failure reporting so FFmpeg stderr is surfaced on merge failures instead of returning only an exit code.
+- Cleared the outstanding Clippy warnings in the touched engine code by replacing manual ceil division and collapsing the oversized argument lists into small request structs.
+
+### Verification
+
+- `cargo test --release --features gpu` in `engine/`
+- `cargo clippy --release --features gpu --all-targets -- -D warnings` in `engine/`
+- `cargo build --release --features gpu` in `engine/`
+- `cargo run --release -- <input> <output>.mp4 libx264 --backend=gpu` in `engine/`
+  - verified explicit GPU requests now fail closed without the feature: `GPU backend requested explicitly but engine was built without the 'gpu' feature`
+- Direct engine smoke run with `--backend=cpu --parallel-workers=3`
+  - verified the parallel path completes successfully after the no-reencode concat change and emits the expected timing line
+- `BENCH_ITERATIONS=1 BENCH_PARALLEL_WORKERS=3 bun run bench:engine`
+  - completed the short and medium cases (`rect-stress`, `text-heavy`, `icon-dense`, `math-complex`, `mixed-dense`) without parallel concat failures; the long-form case was still running when this review note was written
+
+### Notes
+
+- The benchmark harness still reports one existing image-quality failure on `rect-stress` GPU pixel diff; that predates these three fixes and was not part of this patch.
+
+- [x] Inspect GPU backend hotspots for atlas rebuilds, tessellation churn, and per-frame buffer allocation.
+- [x] Capture a fresh benchmark baseline for the GPU engine cases.
+- [x] Add minimal cross-frame caches for text atlas results and icon/math tessellation.
+- [x] Reuse grow-only GPU buffers for rect, text, and path draws instead of recreating them every frame.
+- [x] Run targeted verification plus before/after benchmarks and document the result.
+
+---
+
+## GPU Cache Pass
+
+### Review
+
+- Added a single-entry text atlas cache in `WgpuBackend` keyed by raster-affecting text inputs, while storing line placement in local text space so moving or rotating text can still reuse the same atlas across frames.
+- Added a simple icon/path tessellation cache keyed by icon geometry/style, then applied transform and opacity per frame from cached local-space vertices instead of reparsing and retessellating every icon every frame.
+- Replaced per-frame rect/text/path GPU upload buffer creation with grow-only reusable buffers that persist on the backend and are rewritten via `queue.write_buffer`.
+
+### Verification
+
+- `cargo test --release --features gpu gpu_backend_should_roughly_match_cpu_for_mixed_frame -- --nocapture` in `engine/`
+- `cargo build --release --features gpu` in `engine/`
+- `BENCH_ITERATIONS=1 bun run bench:engine`
+
+### Benchmarks
+
+- GPU render time, before -> after:
+- `rect-stress`: `227.46ms` -> `226.38ms` (`-0.5%`)
+- `text-heavy`: `489.71ms` -> `206.50ms` (`-57.8%`)
+- `icon-dense`: `236.47ms` -> `202.71ms` (`-14.3%`)
+- `math-complex`: `2965.15ms` -> `315.51ms` (`-89.4%`)
+- `mixed-dense`: `1005.34ms` -> `858.21ms` (`-14.6%`)
+- `long-form`: `22112.19ms` -> `16810.92ms` (`-24.0%`)
+
+---
+
+## GPU Quality Pass
+
+### Review
+
+- Added a minimal 4x MSAA render target for the GPU backend, then resolve into the existing single-sample framebuffer for readback/encoding.
+- Updated the rect, text, and path pipelines to use the same sample count so icon and math edges get hardware multisample smoothing without changing the existing caching or tessellation design.
+
+### Verification
+
+- `cargo build --release --features gpu` in `engine/`
+- `cargo test --release --features gpu gpu_backend_should_roughly_match_cpu_for_mixed_frame -- --nocapture` in `engine/`
+- `BENCH_ITERATIONS=1 bun run bench:engine`
+
+### Benchmarks
+
+- GPU render time after MSAA vs pre-MSAA cached backend:
+- `rect-stress`: `226.38ms` -> `225.24ms` (`-0.5%`)
+- `text-heavy`: `206.50ms` -> `203.65ms` (`-1.4%`)
+- `icon-dense`: `202.71ms` -> `214.25ms` (`+5.7%`)
+- `math-complex`: `315.51ms` -> `325.06ms` (`+3.0%`)
+- `mixed-dense`: `858.21ms` -> `898.22ms` (`+4.7%`)
+- `long-form`: `16810.92ms` -> `19609.35ms` (`+16.7%`)
+
+- Quality signal improved for the path-heavy cases:
+- `icon-dense` pixel diff: `avgChannelDiff 1.5716 -> 0.6164`, `changedPixelRatio 0.0323 -> 0.0047`
+- `math-complex` pixel diff: `avgChannelDiff 3.0783 -> 1.2664`, `changedPixelRatio 0.0682 -> 0.0230`
+
+---
+
 - [x] Inspect the AI generation endpoint and schema conversion path.
 - [x] Inspect the render endpoint, frame renderer, and encoder pipeline.
 - [x] Identify which stages are CPU-bound, GPU-assisted, or codec/hardware dependent.
