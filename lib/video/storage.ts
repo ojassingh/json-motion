@@ -37,6 +37,18 @@ export const createRenderOutputTarget = async (
 export const getRenderObjectKey = (jobId: string): string =>
   `${PUBLIC_RENDER_DIRECTORY_NAME}/${jobId}.mp4`;
 
+export const createRemoteRenderOutputTarget = (
+  jobId?: string
+): RenderOutputTarget => {
+  const resolvedJobId = jobId ?? randomUUID();
+
+  return {
+    filePath: getRenderObjectKey(resolvedJobId),
+    jobId: resolvedJobId,
+    publicUrl: null,
+  };
+};
+
 export const createCustomRenderOutputTarget = (
   outputFilePath: string,
   jobId?: string
