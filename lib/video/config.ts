@@ -41,3 +41,13 @@ export const getDefaultVideoCodec = (
 
   return "libx264";
 };
+
+export const getModalRenderEndpoint = (): string | null => {
+  const endpoint = process.env.MODAL_RENDER_ENDPOINT?.trim();
+  return endpoint && endpoint.length > 0 ? endpoint : null;
+};
+
+export const getModalRenderToken = (): string | null => {
+  const token = process.env.MODAL_RENDER_TOKEN?.trim();
+  return token && token.length > 0 ? token : null;
+};
