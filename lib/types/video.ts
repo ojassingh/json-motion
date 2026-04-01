@@ -27,6 +27,7 @@ import type {
   videoStackNodeSchema,
   videoTextAlignSchema,
   videoTimelineEventSchema,
+  videoVectorSchema,
 } from "@/lib/video/schema";
 
 export type VideoAiOutput = z.infer<typeof videoAiOutputSchema>;
@@ -50,6 +51,7 @@ export type VideoIconNode = z.infer<typeof videoIconNodeSchema>;
 export type VideoIconPrimitive = z.infer<typeof videoIconPrimitiveSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
 export type VideoPoint = z.infer<typeof videoPointSchema>;
+export type VideoVector = z.infer<typeof videoVectorSchema>;
 export type VideoRepeatNode = z.infer<typeof videoRepeatNodeSchema>;
 export type VideoScene = z.infer<typeof videoSceneSchema>;
 export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;

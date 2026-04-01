@@ -93,7 +93,7 @@ describe("video arrows", () => {
           id: "scene-1",
           nodes: {
             diagonal: {
-              colStep: { x: 30, y: 0 },
+              colStep: { x: 30 },
               cols: 2,
               rowStep: { x: 20, y: 10 },
               rows: 2,
@@ -145,5 +145,38 @@ describe("video arrows", () => {
       "diagonal_r1_c0",
       "diagonal_r1_c1",
     ]);
+  });
+
+  test("rejects repeat nodes used as layout children with a clear error", async () => {
+    await expect(
+      convertAiOutputToVideoDescription({
+        scenes: [
+          {
+            duration: 1,
+            id: "scene-1",
+            nodes: {
+              centered: {
+                children: ["grid"],
+                type: "center",
+              },
+              grid: {
+                colStep: { x: 30 },
+                cols: 2,
+                rowStep: { y: 20 },
+                rows: 2,
+                template: {
+                  name: "star",
+                  stroke: "#f8fafc",
+                  type: "icon",
+                  width: 24,
+                  height: 24,
+                },
+                type: "repeat",
+              },
+            },
+          },
+        ],
+      })
+    ).rejects.toThrow("cannot be referenced from layout node");
   });
 });

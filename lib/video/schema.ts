@@ -88,6 +88,16 @@ export const videoPointSchema = z
   })
   .strict();
 
+export const videoVectorSchema = z
+  .object({
+    x: fin.optional(),
+    y: fin.optional(),
+  })
+  .strict()
+  .refine((value) => value.x != null || value.y != null, {
+    message: "Provide at least one axis.",
+  });
+
 export const videoArrowEndpointRefSchema = z
   .object({
     anchor: videoAnchorSchema.optional(),
@@ -267,10 +277,10 @@ const videoRepeatTemplateSchema = z.union([
 
 export const videoRepeatNodeSchema = z
   .object({
-    colStep: videoPointSchema.optional(),
+    colStep: videoVectorSchema.optional(),
     cols: z.number().int().positive().max(32),
-    origin: videoPointSchema.optional(),
-    rowStep: videoPointSchema.optional(),
+    origin: videoVectorSchema.optional(),
+    rowStep: videoVectorSchema.optional(),
     rows: z.number().int().positive().max(32),
     template: videoRepeatTemplateSchema,
     type: z.literal("repeat"),

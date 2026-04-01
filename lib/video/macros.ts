@@ -4,12 +4,8 @@ import type {
   VideoAiRenderableNode,
   VideoAiScene,
   VideoPoint,
+  VideoVector,
 } from "@/lib/types/video";
-
-const DEFAULT_POINT = {
-  x: 0,
-  y: 0,
-} as const satisfies VideoPoint;
 
 const addPoints = (left: VideoPoint, right: VideoPoint): VideoPoint => ({
   x: left.x + right.x,
@@ -19,6 +15,11 @@ const addPoints = (left: VideoPoint, right: VideoPoint): VideoPoint => ({
 const scalePoint = (point: VideoPoint, scalar: number): VideoPoint => ({
   x: point.x * scalar,
   y: point.y * scalar,
+});
+
+const vectorToPoint = (vector?: VideoVector): VideoPoint => ({
+  x: vector?.x ?? 0,
+  y: vector?.y ?? 0,
 });
 
 const offsetNodePosition = (
@@ -34,9 +35,9 @@ const expandRepeatNode = (
   id: string,
   node: Extract<VideoAiNode, { type: "repeat" }>
 ): [string, VideoAiRenderableNode][] => {
-  const origin = node.origin ?? DEFAULT_POINT;
-  const rowStep = node.rowStep ?? DEFAULT_POINT;
-  const colStep = node.colStep ?? DEFAULT_POINT;
+  const origin = vectorToPoint(node.origin);
+  const rowStep = vectorToPoint(node.rowStep);
+  const colStep = vectorToPoint(node.colStep);
   const entries: [string, VideoAiRenderableNode][] = [];
 
   for (let row = 0; row < node.rows; row += 1) {
@@ -71,11 +72,42 @@ const expandTimelineTarget = (
   return [...new Set(expanded)];
 };
 
+const assertRepeatNodesAreNotUsedAsChildren = (
+  scene: VideoAiScene,
+  repeatedNodeIds: Set<string>
+): void => {
+  for (const [id, node] of Object.entries(scene.nodes)) {
+    if (
+      node.type !== "align" &&
+      node.type !== "center" &&
+      node.type !== "stack"
+    ) {
+      continue;
+    }
+
+    const repeatedChild = node.children.find((childId) =>
+      repeatedNodeIds.has(childId)
+    );
+    if (repeatedChild) {
+      throw new Error(
+        `Repeat node "${repeatedChild}" cannot be referenced from layout node "${id}". Use \`origin\`, \`rowStep\`, and \`colStep\` to place repeated content directly.`
+      );
+    }
+  }
+};
+
 export const expandAiSceneMacros = (
   scene: VideoAiScene
 ): ExpandedVideoAiScene => {
   const expandedNodes: Record<string, VideoAiRenderableNode> = {};
   const repeatedNodeIds = new Map<string, string[]>();
+  const repeatedNodeIdSet = new Set(
+    Object.entries(scene.nodes)
+      .filter(([, node]) => node.type === "repeat")
+      .map(([id]) => id)
+  );
+
+  assertRepeatNodesAreNotUsedAsChildren(scene, repeatedNodeIdSet);
 
   for (const [id, node] of Object.entries(scene.nodes)) {
     if (node.type !== "repeat") {

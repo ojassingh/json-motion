@@ -56,7 +56,7 @@ export const videoCatalog = defineCatalog({
     },
     repeat: {
       description:
-        "Macro that repeats one leaf template in a 2D lattice. Use `rows`, `cols`, `rowStep`, and `colStep`. Best for grids, diagonal patterns, and repeated arrows. `template` should be a single `rect`, `text`, `icon`, or absolute `arrow`.",
+        "Macro that repeats one leaf template in a 2D lattice. Use `rows`, `cols`, `rowStep`, and `colStep`. Omitted axes default to 0, so `{ y: 48 }` is valid. Best for grids, diagonal patterns, and repeated arrows. `template` should be a single `rect`, `text`, `icon`, or absolute `arrow`. Do not reference a `repeat` node from layout `children`; place it directly with `origin`.",
       propSchema: videoRepeatNodeSchema,
     },
     stack: {
@@ -85,6 +85,7 @@ Pad the timeline: add roughly 1 second of delay before the first animation start
 Prefer semantic layout nodes over manual positioning: use \`center\`, \`align\`, and \`stack\`.
 Keep root nodes simple and compose layouts by referencing child IDs in layout nodes.
 Use \`dx\`/\`dy\` in the timeline for relative motion — avoid absolute coordinate math.
+When using \`repeat\`, place it with \`origin\` / \`rowStep\` / \`colStep\` instead of wrapping it in \`center\`, \`align\`, or \`stack\`.
 Keep all elements fully inside the canvas.
 If the request implies unsupported media, reinterpret it as a stylized text-and-shape scene.
 `.trim();
