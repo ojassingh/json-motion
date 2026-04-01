@@ -2,6 +2,7 @@ import type { IconNode } from "lucide-react";
 import dynamicIconImports from "lucide-react/dynamicIconImports";
 
 import type {
+  VideoAiEquationNode,
   VideoAiIconNode,
   VideoAiRenderableNode,
   VideoIconNode,
@@ -200,6 +201,34 @@ const resolveAiIconNode = async (
   });
 };
 
+const resolveAiEquationNode = (node: VideoAiEquationNode): VideoIconNode => {
+  const icon = latexToIcon(node.latex, {
+    fontSize: node.size ?? 48,
+  });
+
+  return {
+    absoluteStrokeWidth: false,
+    elements: icon.elements,
+    fill: node.color ?? DEFAULT_TEXT_COLOR,
+    height: icon.height,
+    opacity: node.opacity,
+    rotate: node.rotate,
+    scale: node.scale,
+    scaleX: node.scaleX,
+    scaleY: node.scaleY,
+    skewX: node.skewX,
+    skewY: node.skewY,
+    strokeWidth: 0,
+    type: "icon",
+    viewportHeight: icon.viewportHeight,
+    viewportWidth: icon.viewportWidth,
+    width: icon.width,
+    x: node.x,
+    y: node.y,
+    zIndex: node.zIndex,
+  };
+};
+
 const resolveAiTextNode = (node: VideoTextNode): VideoNode => {
   const latex = extractDisplayLatex(node.text);
 
@@ -244,6 +273,10 @@ export const resolveAiSceneNodes = async (
   const entries = await Promise.all(
     Object.entries(nodes).map(
       async ([id, node]): Promise<[string, VideoNode]> => {
+        if (node.type === "equation") {
+          return [id, resolveAiEquationNode(node)];
+        }
+
         if (node.type === "icon") {
           return [id, await resolveAiIconNode(node)];
         }
