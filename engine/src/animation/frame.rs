@@ -21,7 +21,7 @@ use crate::text::TextMeasurer;
 use super::segments::{ColorTrack, NumTrack};
 use super::timeline::get_node_events;
 
-const NUMERIC_TRACK_PROPERTIES: [&str; 16] = [
+const NUMERIC_TRACK_PROPERTIES: [&str; 17] = [
     "opacity",
     "x",
     "y",
@@ -38,6 +38,7 @@ const NUMERIC_TRACK_PROPERTIES: [&str; 16] = [
     "cornerRadius",
     "strokeWidth",
     "size",
+    "drawProgress",
 ];
 
 const COLOR_TRACK_PROPERTIES: [&str; 3] = ["fill", "stroke", "color"];

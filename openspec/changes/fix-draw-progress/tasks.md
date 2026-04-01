@@ -1,7 +1,7 @@
 ## 1. Rust Engine Fix
 
-- [ ] 1.1 In `engine/src/animation/frame.rs`, add `"drawProgress"` to the `NUMERIC_TRACK_PROPERTIES` array
-- [ ] 1.2 Update the array size literal from `[&str; 16]` to `[&str; 17]`
+- [x] 1.1 In `engine/src/animation/frame.rs`, add `"drawProgress"` to the `NUMERIC_TRACK_PROPERTIES` array
+- [x] 1.2 Update the array size literal from `[&str; 16]` to `[&str; 17]`
 - [ ] 1.3 Run `cargo build` inside `engine/` and confirm it compiles without errors
 
 ## 2. Verification
