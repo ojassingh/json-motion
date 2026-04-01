@@ -48,6 +48,15 @@
 - `math-complex`: GPU wall `665.48ms` vs CPU wall `1169.36ms`
 - `rect-stress` remains a known outlier where the GPU path is still not the fastest locally (`987.71ms` GPU vs `811.72ms` CPU), and its GPU pixel-diff threshold was already failing before this pass.
 
+### Modal Follow-up
+
+- Deployed the current branch to Modal and ran the deployed `run_benchmark_suite` on an `L40S` worker with `4 CPU / 16 GiB`, `h264_nvenc`, and strict NVIDIA Vulkan enforcement.
+- Remote same-worker CPU vs GPU wall times came back as:
+- `mixed-static-long`: CPU `21443.29ms` vs GPU `9922.39ms` (`2.16x` faster)
+- `rect-animate-long`: CPU `24439.65ms` vs GPU `11998.73ms` (`2.04x` faster)
+- `long-60s`: CPU `25217.05ms` vs GPU `10502.61ms` (`2.40x` faster)
+- Modal also confirmed the expected runtime lane: `NVIDIA L40S`, NVENC available, and only `/etc/vulkan/icd.d/nvidia_icd.json` visible.
+
 ---
 
 - [x] Review the current worktree and split it into the smallest coherent commits.
