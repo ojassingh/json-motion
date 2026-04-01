@@ -54,3 +54,13 @@ export const getModalRenderToken = (): string | null => {
 
 export const getModalVideoCodec = (): string =>
   process.env.MODAL_RENDER_CODEC?.trim() || DEFAULT_MODAL_VIDEO_CODEC;
+
+export const getVideoRenderMode = (): "local" | "modal" => {
+  const configuredMode = process.env.VIDEO_RENDER_MODE?.trim().toLowerCase();
+
+  if (configuredMode === "local" || configuredMode === "modal") {
+    return configuredMode;
+  }
+
+  return getModalRenderEndpoint() ? "modal" : "local";
+};
