@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use skia_safe::{Font, FontMgr, FontStyle, Paint, Typeface};
 
 use crate::schema::TextNode;
-use crate::shared::consts::{DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT};
-use crate::shared::types::ResolvedText;
+use crate::scene::consts::{DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT};
+use crate::scene::types::ResolvedText;
 
 const TEXT_WIDTH_FACTOR: f64 = 0.6;
 

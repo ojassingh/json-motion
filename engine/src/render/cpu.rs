@@ -1,59 +1,20 @@
 use skia_safe::{
-    paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Matrix, Paint, Path,
-    PathBuilder, RRect, Rect, Surface, TextBlob,
+    paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Path, PathBuilder, RRect,
+    Rect, Surface, TextBlob,
 };
 
 use crate::icon;
 use crate::schema::{LineCap, TextAlign};
-use crate::shared::types::{
+use crate::scene::types::{
     ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine,
     ResolvedNode, ResolvedNodeData, ResolvedParametricGraph, ResolvedRect, ResolvedText,
 };
 use crate::text::{self, TextMeasurer};
 
-pub struct FrameBuffer {
-    pixels: Vec<u8>,
-    height: u32,
-    width: u32,
-}
-
-pub trait RenderBackend {
-    fn render_into(
-        &mut self,
-        frame: &ResolvedFrame,
-        target: &mut FrameBuffer,
-        measurer: &dyn TextMeasurer,
-    ) -> Result<(), String>;
-}
+use super::{apply_node_transform, make_paint, FrameBuffer, RenderBackend};
 
 pub struct CpuSkiaBackend {
     surface: Option<Surface>,
-}
-
-impl FrameBuffer {
-    pub fn new(width: u32, height: u32) -> Self {
-        Self {
-            pixels: vec![0_u8; width as usize * height as usize * 4],
-            height,
-            width,
-        }
-    }
-
-    pub fn pixels(&self) -> &[u8] {
-        &self.pixels
-    }
-
-    pub fn pixels_mut(&mut self) -> &mut [u8] {
-        &mut self.pixels
-    }
-
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-
-    pub fn height(&self) -> u32 {
-        self.height
-    }
 }
 
 impl CpuSkiaBackend {
@@ -108,36 +69,6 @@ impl RenderBackend for CpuSkiaBackend {
 
         read_rgba_pixels(surface, target)
     }
-}
-
-pub(crate) fn make_paint(alpha: u8, (r, g, b): (u8, u8, u8), style: paint::Style) -> Paint {
-    let mut paint = Paint::default();
-    paint.set_anti_alias(true);
-    paint.set_style(style);
-    paint.set_color(Color::from_argb(alpha, r, g, b));
-    paint
-}
-
-pub(crate) fn apply_node_transform(
-    canvas: &skia_safe::Canvas,
-    node: &ResolvedNode,
-    w: f32,
-    h: f32,
-) {
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    canvas.translate((node.x as f32 + cx, node.y as f32 + cy));
-    canvas.rotate(node.rotation as f32, None);
-    canvas.scale((node.scale_x as f32, node.scale_y as f32));
-
-    let skew_x = (node.skew_x as f32).to_radians().tan();
-    let skew_y = (node.skew_y as f32).to_radians().tan();
-    if skew_x != 0.0 || skew_y != 0.0 {
-        let matrix = Matrix::new_all(1.0, skew_x, 0.0, skew_y, 1.0, 0.0, 0.0, 0.0, 1.0);
-        canvas.concat(&matrix);
-    }
-
-    canvas.translate((-cx, -cy));
 }
 
 fn draw_rect(canvas: &skia_safe::Canvas, node: &ResolvedNode, rect: &ResolvedRect) {
@@ -466,7 +397,7 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap};
-    use crate::shared::types::{
+    use crate::scene::types::{
         ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
         ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
     };

@@ -9,10 +9,17 @@ use ffmpeg_next as ffmpeg;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "gpu")]
+use std::collections::VecDeque;
+#[cfg(feature = "gpu")]
+use std::sync::Arc;
+
+#[cfg(feature = "gpu")]
+use crate::animation::FrameRenderHint;
+#[cfg(feature = "gpu")]
 use crate::gpu::WgpuBackend;
 use crate::render::FrameBuffer;
 #[cfg(feature = "gpu")]
-use crate::shared::types::ResolvedFrame;
+use crate::scene::types::ResolvedFrame;
 #[cfg(feature = "gpu")]
 use crate::text::TextMeasurer;
 
@@ -22,7 +29,7 @@ pub struct EncodeTimings {
 }
 
 #[cfg(feature = "gpu")]
-pub(crate) struct WgpuInlineEncodeRequest<'a> {
+pub(crate) struct WgpuEncodeRequest<'a> {
     pub backend: &'a mut WgpuBackend,
     pub codec: &'a str,
     pub fps: f64,
@@ -325,14 +332,22 @@ where
 }
 
 #[cfg(feature = "gpu")]
-pub(crate) fn encode_wgpu_inline<F>(
-    request: WgpuInlineEncodeRequest<'_>,
+enum PendingGpuFrame {
+    Cached(Arc<[u8]>),
+    Rendered(FrameRenderHint),
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) fn encode_wgpu<F, H>(
+    request: WgpuEncodeRequest<'_>,
     mut resolve_frame: F,
+    mut frame_hint: H,
 ) -> Result<EncodeTimings, String>
 where
     F: FnMut(usize) -> Result<ResolvedFrame, String>,
+    H: FnMut(usize) -> FrameRenderHint,
 {
-    let WgpuInlineEncodeRequest {
+    let WgpuEncodeRequest {
         backend,
         codec,
         fps,
@@ -353,33 +368,57 @@ where
     let mut buffer_index = 0usize;
     let mut submitted = 0usize;
     let mut encoded = 0usize;
-
-    while submitted < frame_count && backend.can_accept_frame() {
-        let render_start = Instant::now();
-        let frame = resolve_frame(submitted)?;
-        backend.submit_frame(&frame, measurer)?;
-        render_duration += render_start.elapsed();
-        submitted += 1;
-    }
+    let mut pending_frames = VecDeque::new();
+    let mut static_scene_pixels: Option<(u64, Arc<[u8]>)> = None;
 
     while encoded < frame_count {
-        let render_start = Instant::now();
-        backend.collect_frame(&mut buffers[buffer_index])?;
-        render_duration += render_start.elapsed();
-
         while submitted < frame_count && backend.can_accept_frame() {
+            let hint = frame_hint(submitted);
+            if let Some((scene_key, pixels)) = &static_scene_pixels {
+                if *scene_key == hint.scene_cache_key && hint.can_reuse_rendered_frame {
+                    pending_frames.push_back(PendingGpuFrame::Cached(Arc::clone(pixels)));
+                    submitted += 1;
+                    continue;
+                }
+            }
+
             let render_start = Instant::now();
             let frame = resolve_frame(submitted)?;
             backend.submit_frame(&frame, measurer)?;
             render_duration += render_start.elapsed();
+            pending_frames.push_back(PendingGpuFrame::Rendered(hint));
             submitted += 1;
         }
 
-        let encode_start = Instant::now();
-        encoder.encode_rgba_pixels(buffers[buffer_index].pixels(), encoded as i64)?;
-        encode_duration += encode_start.elapsed();
+        let Some(pending_frame) = pending_frames.pop_front() else {
+            continue;
+        };
 
-        buffer_index = (buffer_index + 1) % buffers.len();
+        match pending_frame {
+            PendingGpuFrame::Cached(pixels) => {
+                let encode_start = Instant::now();
+                encoder.encode_rgba_pixels(&pixels, encoded as i64)?;
+                encode_duration += encode_start.elapsed();
+            }
+            PendingGpuFrame::Rendered(hint) => {
+                let render_start = Instant::now();
+                backend.collect_frame(&mut buffers[buffer_index])?;
+                render_duration += render_start.elapsed();
+
+                if hint.can_reuse_rendered_frame {
+                    static_scene_pixels = Some((
+                        hint.scene_cache_key,
+                        Arc::<[u8]>::from(buffers[buffer_index].pixels().to_vec()),
+                    ));
+                }
+
+                let encode_start = Instant::now();
+                encoder.encode_rgba_pixels(buffers[buffer_index].pixels(), encoded as i64)?;
+                encode_duration += encode_start.elapsed();
+                buffer_index = (buffer_index + 1) % buffers.len();
+            }
+        }
+
         encoded += 1;
     }
 

@@ -6,6 +6,12 @@
 
 ---
 
+- [x] Extend the GPU path pipeline so the explicit GPU export lane can draw `arrow`, `circle`, `line`, `functionGraph`, and `parametricGraph` nodes instead of dropping them.
+- [x] Remove the Modal arrow-only CPU escape hatch once the GPU export lane supports the missing vector primitives.
+- [x] Add focused GPU regression tests that compare mixed unsupported-primitives scenes against CPU output and verify circle/graph content is present.
+
+---
+
 ## GPU Export Overlap Pass
 
 ### Plan

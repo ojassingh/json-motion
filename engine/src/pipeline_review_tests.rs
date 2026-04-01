@@ -5,7 +5,7 @@ use crate::schema::{
     AlignNode, Anchor, ArrowNode, ArrowPosition, Node, NodeBase, RectNode, SceneEntry,
     VideoDescription,
 };
-use crate::shared::types::{ResolvedNodeBatchKind, ResolvedNodeData};
+use crate::scene::types::{ResolvedNodeBatchKind, ResolvedNodeData};
 use crate::text::SkiaTextMeasurer;
 
 fn video_with_scene(scene: SceneEntry) -> VideoDescription {

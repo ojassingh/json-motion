@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use skia_safe::{paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Paint, TextBlob};
 
 use crate::schema::TextAlign;
-use crate::shared::types::{ResolvedNode, ResolvedText};
+use crate::scene::types::{ResolvedNode, ResolvedText};
 use crate::text::{self, TextMeasurer};
 
 #[derive(Clone)]

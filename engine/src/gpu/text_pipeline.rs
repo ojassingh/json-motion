@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::shared::types::ResolvedNode;
+use crate::scene::types::ResolvedNode;
 
 use super::atlas::TextLineEntry;
 
@@ -43,7 +43,7 @@ impl TextInstance {
         let local_cy = entry.local_y + gh / 2.0;
 
         let opacity = node.opacity.clamp(0.0, 1.0) as f32;
-        let (r, g, b) = if let crate::shared::types::ResolvedNodeData::Text(t) = &node.data {
+        let (r, g, b) = if let crate::scene::types::ResolvedNodeData::Text(t) = &node.data {
             (
                 t.color.0 as f32 / 255.0,
                 t.color.1 as f32 / 255.0,
