@@ -37,6 +37,10 @@ export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;
 export type VideoAiIconNode = z.infer<typeof videoAiIconNodeSchema>;
 export type VideoAiNode = z.infer<typeof videoAiNodeSchema>;
+export type VideoAiRenderableNode = Exclude<VideoAiNode, { type: "repeat" }>;
+export type ExpandedVideoAiScene = Omit<VideoAiScene, "nodes"> & {
+  nodes: Record<string, VideoAiRenderableNode>;
+};
 export type VideoArrowEndpointRef = z.infer<typeof videoArrowEndpointRefSchema>;
 export type VideoArrowNode = z.infer<typeof videoArrowNodeSchema>;
 export type VideoArrowPosition = z.infer<typeof videoArrowPositionSchema>;

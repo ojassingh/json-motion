@@ -3,7 +3,7 @@ import dynamicIconImports from "lucide-react/dynamicIconImports";
 
 import type {
   VideoAiIconNode,
-  VideoAiNode,
+  VideoAiRenderableNode,
   VideoIconNode,
   VideoIconPrimitive,
   VideoNode,
@@ -239,7 +239,7 @@ const resolveAiTextNode = (node: VideoTextNode): VideoNode => {
 // Converts the nodes map from an AI output scene (name-based icons) into a
 // fully-resolved map ready for the Rust engine (elements-based icons).
 export const resolveAiSceneNodes = async (
-  nodes: Record<string, VideoAiNode>
+  nodes: Record<string, VideoAiRenderableNode>
 ): Promise<Record<string, VideoNode>> => {
   const entries = await Promise.all(
     Object.entries(nodes).map(
