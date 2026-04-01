@@ -346,7 +346,10 @@ where
     let mut encoder = RgbaVideoEncoder::new(width, height, fps, codec, output_path)?;
     let mut render_duration = Duration::ZERO;
     let mut encode_duration = Duration::ZERO;
-    let mut buffers = [FrameBuffer::new(width, height), FrameBuffer::new(width, height)];
+    let mut buffers = [
+        FrameBuffer::new(width, height),
+        FrameBuffer::new(width, height),
+    ];
     let mut buffer_index = 0usize;
     let mut submitted = 0usize;
     let mut encoded = 0usize;
@@ -389,4 +392,3 @@ where
         render: render_duration,
     })
 }
-

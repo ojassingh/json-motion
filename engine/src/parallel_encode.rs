@@ -61,7 +61,10 @@ enum WorkerFrame {
 #[cfg(feature = "gpu")]
 enum WorkerMessage {
     Finish,
-    Frame { local_index: usize, pixels: WorkerFrame },
+    Frame {
+        local_index: usize,
+        pixels: WorkerFrame,
+    },
 }
 
 #[cfg(feature = "gpu")]
@@ -82,10 +85,7 @@ fn recycle_framebuffer(
 }
 
 #[cfg(feature = "gpu")]
-fn worker_channel_error(
-    error_receiver: &mpsc::Receiver<String>,
-    fallback: &str,
-) -> String {
+fn worker_channel_error(error_receiver: &mpsc::Receiver<String>, fallback: &str) -> String {
     error_receiver
         .try_recv()
         .unwrap_or_else(|_| fallback.to_string())
@@ -105,7 +105,10 @@ fn encode_chunk_worker(
     while let Ok(message) = receiver.recv() {
         match message {
             WorkerMessage::Finish => break,
-            WorkerMessage::Frame { local_index, pixels } => match pixels {
+            WorkerMessage::Frame {
+                local_index,
+                pixels,
+            } => match pixels {
                 WorkerFrame::Owned(buffer) => {
                     encoder.encode_rgba_pixels(buffer.pixels(), local_index as i64)?;
                     recycle_framebuffer(&recycle_sender, buffer)?;
@@ -145,7 +148,10 @@ pub fn parallel_encode(
     }
 
     let segments = build_chunk_segments(&request);
-    let chunk_files = segments.iter().map(|segment| segment.path.clone()).collect::<Vec<_>>();
+    let chunk_files = segments
+        .iter()
+        .map(|segment| segment.path.clone())
+        .collect::<Vec<_>>();
 
     let width = desc.width;
     let height = desc.height;
@@ -238,7 +244,9 @@ pub fn parallel_encode_wgpu(
                 output_path: request.output_path,
                 width: desc.width,
             },
-            |frame_index| animation::resolve_frame_fast(compiled, frame_index as u32, &local_measurer),
+            |frame_index| {
+                animation::resolve_frame_fast(compiled, frame_index as u32, &local_measurer)
+            },
         );
     }
 
@@ -248,7 +256,10 @@ pub fn parallel_encode_wgpu(
         ..request
     };
     let segments = build_chunk_segments(&effective_request);
-    let chunk_files = segments.iter().map(|segment| segment.path.clone()).collect::<Vec<_>>();
+    let chunk_files = segments
+        .iter()
+        .map(|segment| segment.path.clone())
+        .collect::<Vec<_>>();
 
     let width = desc.width;
     let height = desc.height;
@@ -396,11 +407,9 @@ pub fn parallel_encode_wgpu(
 
         let render_elapsed = producer_started.elapsed();
         for sender in worker_senders {
-            sender
-                .send(WorkerMessage::Finish)
-                .map_err(|_| {
-                    worker_channel_error(&worker_error_receiver, "GPU encode worker channel closed")
-                })?;
+            sender.send(WorkerMessage::Finish).map_err(|_| {
+                worker_channel_error(&worker_error_receiver, "GPU encode worker channel closed")
+            })?;
         }
         for handle in worker_handles {
             handle

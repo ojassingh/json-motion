@@ -6,7 +6,9 @@ import {
 } from "@/lib/video/config";
 import {
   videoAiEquationNodeSchema,
+  videoAiFunctionGraphNodeSchema,
   videoAiIconNodeSchema,
+  videoAiParametricGraphNodeSchema,
   videoAlignNodeSchema,
   videoAnchorSchema,
   videoArrowNodeSchema,
@@ -57,10 +59,20 @@ export const videoCatalog = defineCatalog({
         "Renders a LaTeX mathematical expression. Use for equations, formulas, and mathematical notation. `latex` is the expression without surrounding `$$` delimiters. `size` controls the font size in pixels.",
       propSchema: videoAiEquationNodeSchema,
     },
+    functionGraph: {
+      description:
+        "Plots y=f(x) for a mathematical function. `fn` is a mathjs expression in `x`. Use for sine waves, parabolas, exponentials, and any y=f(x) curve. Animate `drawProgress` from 0 to 1 to draw the curve progressively. Set `showAxes: true` to render axis lines.",
+      propSchema: videoAiFunctionGraphNodeSchema,
+    },
     icon: {
       description:
         "Renders a Lucide icon by name (see lucide.dev/icons). Use for symbolic visual accents. Specify `stroke` to colour the icon lines; omit `fill` unless you want a solid fill instead of an outline icon.",
       propSchema: videoAiIconNodeSchema,
+    },
+    parametricGraph: {
+      description:
+        "Plots a parametric curve `(fnX(t), fnY(t))`. Use for circles, spirals, Lissajous figures, and curves that cannot be expressed as y=f(x). Both `fnX` and `fnY` must be mathjs expressions in `t`.",
+      propSchema: videoAiParametricGraphNodeSchema,
     },
     line: {
       description:
@@ -90,9 +102,16 @@ export const videoCatalog = defineCatalog({
   },
 });
 
-export const PROMPT_TO_VIDEO_SYSTEM_PROMPT = videoCatalog.toPrompt(
+export const PROMPT_TO_VIDEO_SYSTEM_PROMPT = `${videoCatalog.toPrompt(
   DEFAULT_VIDEO_DIMENSIONS
-);
+)}
+
+## Graph Recipe
+
+For a physics lecture sine wave:
+- Use a \`functionGraph\` node with \`fn: "sin(x)"\`, centered in the frame with \`showAxes: true\`.
+- Start the node with \`drawProgress: 0\`, then add a timeline event with \`action: "draw"\` so the curve traces from left to right.
+- Pair the graph with a short text label or equation instead of replacing the graph with icons.`.trim();
 
 export const buildPromptToVideoUserPrompt = (prompt: string): string =>
   `

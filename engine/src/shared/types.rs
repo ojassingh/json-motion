@@ -43,6 +43,19 @@ pub struct ResolvedArrow {
     pub head_size: f64,
 }
 
+pub struct ResolvedFunctionGraph {
+    pub width: f64,
+    pub height: f64,
+    pub points: Vec<(f64, f64)>,
+    pub color: (u8, u8, u8),
+    pub stroke_width: f64,
+    pub show_axes: bool,
+    pub show_grid: bool,
+    pub draw_progress: f64,
+    pub x_range: Option<[f64; 2]>,
+    pub y_range: Option<[f64; 2]>,
+}
+
 pub struct ResolvedLine {
     pub x1: f64,
     pub y1: f64,
@@ -68,11 +81,22 @@ pub struct ResolvedIcon {
     pub elements: Vec<IconPrimitive>,
 }
 
+pub struct ResolvedParametricGraph {
+    pub width: f64,
+    pub height: f64,
+    pub points: Vec<(f64, f64)>,
+    pub color: (u8, u8, u8),
+    pub stroke_width: f64,
+    pub draw_progress: f64,
+}
+
 pub enum ResolvedNodeData {
     Arrow(ResolvedArrow),
     Circle(ResolvedCircle),
+    FunctionGraph(ResolvedFunctionGraph),
     Icon(ResolvedIcon),
     Line(ResolvedLine),
+    ParametricGraph(ResolvedParametricGraph),
     Rect(ResolvedRect),
     Text(ResolvedText),
 }

@@ -5,8 +5,10 @@ import { join } from "node:path";
 
 interface BenchmarkCase {
   description: Record<string, unknown>;
+  gpuEnabled?: boolean;
   name: string;
   threshold: PixelDiffThreshold;
+  verification?: "non-empty-frame" | "pixel-diff";
 }
 
 interface BenchmarkSample {
@@ -77,6 +79,13 @@ const CASES: BenchmarkCase[] = [
     name: "math-complex",
     description: createMathComplex(),
     threshold: { maxAvgChannelDiff: 14, maxChangedPixelRatio: 0.24 },
+  },
+  {
+    description: createFunctionGraphBenchmark(),
+    gpuEnabled: false,
+    name: "function-graph",
+    verification: "non-empty-frame",
+    threshold: { maxAvgChannelDiff: 255, maxChangedPixelRatio: 1 },
   },
   {
     name: "mixed-dense",
@@ -305,6 +314,44 @@ function createMathComplex() {
     duration: 180,
     id: "scene1",
     nodes,
+    startFrame: 0,
+    timeline: [],
+  });
+
+  return desc;
+}
+
+function createFunctionGraphBenchmark() {
+  const desc = createBaseDescription();
+  const points = Array.from({ length: 640 }, (_, index) => {
+    const ratio = index / 639;
+    return {
+      x: ratio * 640,
+      y: 180 - Math.sin(ratio * Math.PI * 4) * 120,
+    };
+  });
+
+  desc.background = "#ffffff";
+  desc.scenes.push({
+    duration: 90,
+    id: "scene1",
+    nodes: {
+      graph: {
+        color: "#0f172a",
+        drawProgress: 1,
+        height: 360,
+        points,
+        showAxes: true,
+        showGrid: true,
+        strokeWidth: 3,
+        type: "functionGraph",
+        width: 640,
+        x: 320,
+        xRange: [-6.28, 6.28],
+        y: 180,
+        yRange: [-1.5, 1.5],
+      },
+    },
     startFrame: 0,
     timeline: [],
   });
@@ -572,6 +619,24 @@ function assertFrameHasContent(frame: Buffer, label: string) {
   }
 }
 
+function countPixelsDifferentFromBackground(frame: Buffer): number {
+  const background = frame.subarray(0, 4);
+  let changedPixels = 0;
+
+  for (let i = 0; i < frame.length; i += 4) {
+    if (
+      frame[i] !== background[0] ||
+      frame[i + 1] !== background[1] ||
+      frame[i + 2] !== background[2] ||
+      frame[i + 3] !== background[3]
+    ) {
+      changedPixels += 1;
+    }
+  }
+
+  return changedPixels;
+}
+
 function computePixelDiff(
   cpuFrame: Buffer,
   gpuFrame: Buffer
@@ -623,17 +688,48 @@ function verifyPixelDiff(testCase: BenchmarkCase) {
   return diff;
 }
 
+function verifyNonEmptyFrame(testCase: BenchmarkCase) {
+  const cpuRun = runCase(testCase, "cpu", {
+    codec: VERIFY_CODEC,
+    keepOutput: true,
+  }) as { outputPath: string; sample: BenchmarkSample; tempDir: string };
+
+  const frame = extractFirstFrame(cpuRun.outputPath);
+  const nonBackgroundPixels = countPixelsDifferentFromBackground(frame);
+
+  rmSync(cpuRun.tempDir, { force: true, recursive: true });
+
+  return {
+    nonBackgroundPixels,
+    pass: nonBackgroundPixels > 0,
+  };
+}
+
 function formatSummary(testCase: BenchmarkCase) {
-  const gpuSamples = Array.from(
-    { length: ITERATIONS },
-    () =>
-      runCase(testCase, "gpu", {
-        codec: CODEC,
-        parallelWorkers: PARALLEL_WORKERS,
-      }).sample
-  );
   const cpuSample = runCase(testCase, "cpu", { codec: CODEC }).sample;
-  const diff = verifyPixelDiff(testCase);
+  const gpuEnabled = testCase.gpuEnabled ?? true;
+  const verificationMode = testCase.verification ?? "pixel-diff";
+  const gpuSamples = gpuEnabled
+    ? Array.from(
+        { length: ITERATIONS },
+        () =>
+          runCase(testCase, "gpu", {
+            codec: CODEC,
+            parallelWorkers: PARALLEL_WORKERS,
+          }).sample
+      )
+    : [];
+  const verification =
+    verificationMode === "non-empty-frame"
+      ? {
+          kind: "non-empty-frame" as const,
+          ...verifyNonEmptyFrame(testCase),
+        }
+      : {
+          kind: "pixel-diff" as const,
+          ...verifyPixelDiff(testCase),
+          threshold: testCase.threshold,
+        };
 
   const gpuRender = gpuSamples.map((sample) => sample.renderMs);
   const gpuEncode = gpuSamples.map((sample) => sample.encodeMs);
@@ -650,23 +746,18 @@ function formatSummary(testCase: BenchmarkCase) {
       renderMs: cpuSample.renderMs,
       wallMs: cpuSample.wallMs,
     },
-    gpu: {
-      avgEncodeMs: Number(average(gpuEncode).toFixed(2)),
-      avgMaxRssKb:
-        gpuRss.length > 0 ? Number(average(gpuRss).toFixed(2)) : null,
-      avgRenderMs: Number(average(gpuRender).toFixed(2)),
-      avgWallMs: Number(average(gpuWall).toFixed(2)),
-      maxRenderMs: Number(Math.max(...gpuRender).toFixed(2)),
-      minRenderMs: Number(Math.min(...gpuRender).toFixed(2)),
-    },
-    pixelDiff: {
-      avgChannelDiff: diff.avgChannelDiff,
-      changedPixelRatio: diff.changedPixelRatio,
-      pass:
-        diff.avgChannelDiff <= testCase.threshold.maxAvgChannelDiff &&
-        diff.changedPixelRatio <= testCase.threshold.maxChangedPixelRatio,
-      threshold: testCase.threshold,
-    },
+    gpu: gpuEnabled
+      ? {
+          avgEncodeMs: Number(average(gpuEncode).toFixed(2)),
+          avgMaxRssKb:
+            gpuRss.length > 0 ? Number(average(gpuRss).toFixed(2)) : null,
+          avgRenderMs: Number(average(gpuRender).toFixed(2)),
+          avgWallMs: Number(average(gpuWall).toFixed(2)),
+          maxRenderMs: Number(Math.max(...gpuRender).toFixed(2)),
+          minRenderMs: Number(Math.min(...gpuRender).toFixed(2)),
+        }
+      : null,
+    verification,
   };
 }
 

@@ -13,8 +13,9 @@ use crate::shared::consts::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_SCENE_BG, DEFAULT_TEXT_COLOR,
 };
 use crate::shared::types::{
-    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedIcon, ResolvedLine, ResolvedNode,
-    ResolvedNodeBatchKind, ResolvedNodeData, ResolvedRect, ResolvedText,
+    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
+    ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedParametricGraph,
+    ResolvedRect, ResolvedText,
 };
 use crate::text::TextMeasurer;
 
@@ -269,6 +270,7 @@ fn classify_render_batch_kind(
     let node_dynamic_props: &[&str] = match node {
         Node::Arrow(_) => &["strokeWidth", "stroke"],
         Node::Circle(_) => &["radius", "strokeWidth", "drawProgress", "fill", "stroke"],
+        Node::FunctionGraph(_) => &["drawProgress", "color", "strokeWidth"],
         Node::Icon(_) => &["width", "height", "strokeWidth", "fill", "stroke"],
         Node::Line(_) => &[
             "x1",
@@ -279,6 +281,7 @@ fn classify_render_batch_kind(
             "drawProgress",
             "stroke",
         ],
+        Node::ParametricGraph(_) => &["drawProgress", "color", "strokeWidth"],
         Node::Rect(_) => &[
             "width",
             "height",
@@ -373,6 +376,17 @@ fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
                     .clamp(0.0, 1.0),
             );
         }
+        Node::FunctionGraph(graph) => {
+            graph.color = tracks.color(
+                "color",
+                Some(graph.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+                t,
+            );
+            graph.stroke_width =
+                Some(tracks.num("strokeWidth", graph.stroke_width.unwrap_or(2.0), t));
+            graph.draw_progress =
+                Some(tracks.num("drawProgress", graph.draw_progress.unwrap_or(1.0), t));
+        }
         Node::Icon(icon) => {
             icon.width = tracks.num("width", icon.width, t);
             icon.height = tracks.num("height", icon.height, t);
@@ -403,6 +417,17 @@ fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
                     .clamp(0.0, 1.0),
             );
         }
+        Node::ParametricGraph(graph) => {
+            graph.color = tracks.color(
+                "color",
+                Some(graph.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+                t,
+            );
+            graph.stroke_width =
+                Some(tracks.num("strokeWidth", graph.stroke_width.unwrap_or(2.0), t));
+            graph.draw_progress =
+                Some(tracks.num("drawProgress", graph.draw_progress.unwrap_or(1.0), t));
+        }
         Node::Rect(rect) => {
             rect.width = tracks.num("width", rect.width, t);
             rect.height = tracks.num("height", rect.height, t);
@@ -432,8 +457,10 @@ fn base_mut(node: &mut Node) -> &mut NodeBase {
         Node::Arrow(node) => &mut node.base,
         Node::Circle(node) => &mut node.base,
         Node::Center(node) => &mut node.base,
+        Node::FunctionGraph(node) => &mut node.base,
         Node::Icon(node) => &mut node.base,
         Node::Line(node) => &mut node.base,
+        Node::ParametricGraph(node) => &mut node.base,
         Node::Rect(node) => &mut node.base,
         Node::Stack(node) => &mut node.base,
         Node::Text(node) => &mut node.base,
@@ -638,6 +665,48 @@ fn resolve_circle_node(
     )
 }
 
+fn resolve_function_graph_node(
+    graph: &crate::schema::FunctionGraphNode,
+    batch_kind: ResolvedNodeBatchKind,
+    tracks: &NodeTracks,
+    layout_box: layout::LayoutBox,
+    source_index: usize,
+    t: f64,
+) -> ResolvedNode {
+    let color_hex = tracks
+        .color(
+            "color",
+            Some(graph.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+            t,
+        )
+        .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
+
+    resolve_common(
+        &graph.base,
+        batch_kind,
+        tracks,
+        layout_box,
+        source_index,
+        t,
+        ResolvedNodeData::FunctionGraph(ResolvedFunctionGraph {
+            width: graph.width,
+            height: graph.height,
+            points: graph
+                .points
+                .iter()
+                .map(|point| (point.x, point.y))
+                .collect(),
+            color: color::parse_hex(&color_hex),
+            stroke_width: tracks.num("strokeWidth", graph.stroke_width.unwrap_or(2.0), t),
+            show_axes: graph.show_axes.unwrap_or(false),
+            show_grid: graph.show_grid.unwrap_or(false),
+            draw_progress: tracks.num("drawProgress", graph.draw_progress.unwrap_or(1.0), t),
+            x_range: graph.x_range,
+            y_range: graph.y_range,
+        }),
+    )
+}
+
 fn resolve_line_node(
     line: &crate::schema::LineNode,
     batch_kind: ResolvedNodeBatchKind,
@@ -687,6 +756,44 @@ fn resolve_line_node(
     )
 }
 
+fn resolve_parametric_graph_node(
+    graph: &crate::schema::ParametricGraphNode,
+    batch_kind: ResolvedNodeBatchKind,
+    tracks: &NodeTracks,
+    layout_box: layout::LayoutBox,
+    source_index: usize,
+    t: f64,
+) -> ResolvedNode {
+    let color_hex = tracks
+        .color(
+            "color",
+            Some(graph.color.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+            t,
+        )
+        .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
+
+    resolve_common(
+        &graph.base,
+        batch_kind,
+        tracks,
+        layout_box,
+        source_index,
+        t,
+        ResolvedNodeData::ParametricGraph(ResolvedParametricGraph {
+            width: graph.width,
+            height: graph.height,
+            points: graph
+                .points
+                .iter()
+                .map(|point| (point.x, point.y))
+                .collect(),
+            color: color::parse_hex(&color_hex),
+            stroke_width: tracks.num("strokeWidth", graph.stroke_width.unwrap_or(2.0), t),
+            draw_progress: tracks.num("drawProgress", graph.draw_progress.unwrap_or(1.0), t),
+        }),
+    )
+}
+
 fn resolve_node(
     node: &Node,
     batch_kind: ResolvedNodeBatchKind,
@@ -708,6 +815,14 @@ fn resolve_node(
         )?)),
         Node::Circle(circle) => Ok(Some(resolve_circle_node(
             circle,
+            batch_kind,
+            tracks,
+            layout_box,
+            source_index,
+            t,
+        ))),
+        Node::FunctionGraph(graph) => Ok(Some(resolve_function_graph_node(
+            graph,
             batch_kind,
             tracks,
             layout_box,
@@ -749,6 +864,14 @@ fn resolve_node(
         }
         Node::Line(line) => Ok(Some(resolve_line_node(
             line,
+            batch_kind,
+            tracks,
+            layout_box,
+            source_index,
+            t,
+        ))),
+        Node::ParametricGraph(graph) => Ok(Some(resolve_parametric_graph_node(
+            graph,
             batch_kind,
             tracks,
             layout_box,
