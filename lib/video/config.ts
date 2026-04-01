@@ -3,6 +3,7 @@ import path from "node:path";
 export const DEFAULT_CANVAS_FPS = 60;
 export const DEFAULT_CANVAS_WIDTH = 1280;
 export const DEFAULT_CANVAS_HEIGHT = 720;
+export const DEFAULT_MODAL_VIDEO_CODEC = "h264_nvenc";
 
 export const DEFAULT_SCENE_BACKGROUND = "#000000";
 export const DEFAULT_TEXT_COLOR = "#f8fafc";
