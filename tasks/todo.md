@@ -581,3 +581,7 @@
 - `bun run typecheck`
 - `bunx ultracite check lib/video/config.ts lib/video/storage.ts lib/video/modal-render.ts lib/video/render-video.ts lib/video/render-video.test.ts app/api/render/route.ts app/api/render/route.test.ts`
 - `python3 -m py_compile scripts/modal_render_api.py`
+
+### Notes
+
+- Verified the local and orchestration code paths in-repo, but did not run a live end-to-end Modal render because that requires a deployed Modal endpoint plus configured R2 environment variables in the remote runtime.
