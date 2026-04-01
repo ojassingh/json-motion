@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use crate::animation::{compile_video, resolve_frame_fast, total_frame_count};
+use crate::animation::{compile_video, frame_render_hint, resolve_frame_fast, total_frame_count};
 use crate::schema::{AlignNode, Anchor, Node, NodeBase, RectNode, SceneEntry, VideoDescription};
 use crate::shared::types::ResolvedNodeBatchKind;
 use crate::text::SkiaTextMeasurer;
@@ -308,4 +308,67 @@ fn resolve_frame_fast_should_mark_only_animated_absolute_nodes_as_dynamic() {
 
     assert_eq!(static_node.batch_kind, ResolvedNodeBatchKind::Static);
     assert_eq!(animated_node.batch_kind, ResolvedNodeBatchKind::Dynamic);
+}
+
+#[test]
+fn frame_render_hint_should_allow_reuse_for_static_scenes() {
+    let scene = SceneEntry {
+        id: "scene-1".to_string(),
+        background: None,
+        duration: 60,
+        start_frame: 0,
+        nodes: IndexMap::new(),
+        timeline: vec![],
+    };
+    let desc = video_with_scene(scene);
+    let measurer = SkiaTextMeasurer::new();
+    let compiled = compile_video(&desc, &measurer).expect("video should compile");
+    let hint = frame_render_hint(&compiled, 0);
+
+    assert!(hint.can_reuse_rendered_frame);
+    assert_ne!(hint.scene_cache_key, 0);
+}
+
+#[test]
+fn frame_render_hint_should_disable_reuse_for_animated_scenes() {
+    let scene = SceneEntry {
+        id: "scene-1".to_string(),
+        background: None,
+        duration: 60,
+        start_frame: 0,
+        nodes: IndexMap::new(),
+        timeline: vec![crate::schema::TimelineEvent {
+            target: crate::schema::EventTarget::Single("missing".to_string()),
+            at: 0.25,
+            dur: Some(0.5),
+            ease: None,
+            action: None,
+            opacity: Some(0.5),
+            x: None,
+            y: None,
+            dx: None,
+            dy: None,
+            width: None,
+            height: None,
+            rotate: None,
+            scale: None,
+            scale_x: None,
+            scale_y: None,
+            skew_x: None,
+            skew_y: None,
+            corner_radius: None,
+            stroke_width: None,
+            size: None,
+            draw_progress: None,
+            fill: None,
+            stroke: None,
+            color: None,
+        }],
+    };
+    let desc = video_with_scene(scene);
+    let measurer = SkiaTextMeasurer::new();
+    let compiled = compile_video(&desc, &measurer).expect("video should compile");
+    let hint = frame_render_hint(&compiled, 0);
+
+    assert!(!hint.can_reuse_rendered_frame);
 }

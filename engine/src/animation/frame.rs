@@ -55,8 +55,15 @@ pub struct CompiledVideo<'a> {
     pub(crate) width: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameRenderHint {
+    pub can_reuse_rendered_frame: bool,
+    pub scene_cache_key: u64,
+}
+
 pub struct PrecomputedScene<'a> {
     pub(crate) background: (u8, u8, u8),
+    pub(crate) can_reuse_rendered_frame: bool,
     pub(crate) cached_layout: Option<HashMap<String, (f64, f64)>>,
     pub(crate) end_frame_exclusive: u32,
     pub(crate) fps: f64,
@@ -166,6 +173,7 @@ impl<'a> PrecomputedScene<'a> {
 
         Ok(Self {
             background: color::parse_hex(bg_hex),
+            can_reuse_rendered_frame: scene.timeline.is_empty(),
             cached_layout,
             end_frame_exclusive,
             fps: desc.fps,
@@ -538,4 +546,18 @@ pub fn resolve_frame_fast(
         nodes,
         scene_cache_key: scene.render_cache_key,
     })
+}
+
+pub fn frame_render_hint(compiled: &CompiledVideo<'_>, absolute_frame: u32) -> FrameRenderHint {
+    let Some(scene) = scene_for_frame(compiled, absolute_frame) else {
+        return FrameRenderHint {
+            can_reuse_rendered_frame: false,
+            scene_cache_key: 0,
+        };
+    };
+
+    FrameRenderHint {
+        can_reuse_rendered_frame: scene.can_reuse_rendered_frame,
+        scene_cache_key: scene.render_cache_key,
+    }
 }
