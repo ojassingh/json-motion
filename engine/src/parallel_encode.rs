@@ -70,7 +70,7 @@ enum WorkerMessage {
 #[cfg(feature = "gpu")]
 struct SubmittedFrame {
     chunk_index: usize,
-    hint: animation::frame::FrameRenderHint,
+    hint: animation::FrameRenderHint,
     local_index: usize,
 }
 
