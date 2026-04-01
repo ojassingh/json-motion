@@ -88,6 +88,8 @@ export const videoPointSchema = z
   })
   .strict();
 
+const videoRangeSchema = z.tuple([fin, fin]);
+
 export const videoVectorSchema = z
   .object({
     x: fin.optional(),
@@ -145,6 +147,49 @@ export const videoAiEquationNodeSchema = videoNodeBaseSchema
     latex: z.string().trim().min(1),
     size: pos.optional(),
     type: z.literal("equation"),
+  })
+  .strict();
+
+export const videoAiFunctionGraphNodeSchema = videoNodeBaseSchema
+  .extend({
+    color: videoHexColorSchema.optional(),
+    drawProgress: z.number().min(0).max(1).optional(),
+    fn: z.string().trim().min(1),
+    height: pos,
+    showAxes: z.boolean().optional(),
+    showGrid: z.boolean().optional(),
+    strokeWidth: nn.optional(),
+    type: z.literal("functionGraph"),
+    width: pos,
+    xRange: videoRangeSchema,
+    yRange: videoRangeSchema,
+  })
+  .strict();
+
+export const videoAiParametricGraphNodeSchema = videoNodeBaseSchema
+  .extend({
+    color: videoHexColorSchema.optional(),
+    drawProgress: z.number().min(0).max(1).optional(),
+    fnX: z.string().trim().min(1),
+    fnY: z.string().trim().min(1),
+    height: pos,
+    samples: z.number().int().positive().optional(),
+    strokeWidth: nn.optional(),
+    tRange: videoRangeSchema,
+    type: z.literal("parametricGraph"),
+    width: pos,
+  })
+  .strict();
+
+export const videoFunctionGraphNodeSchema = videoAiFunctionGraphNodeSchema
+  .extend({
+    points: z.array(videoPointSchema),
+  })
+  .strict();
+
+export const videoParametricGraphNodeSchema = videoAiParametricGraphNodeSchema
+  .extend({
+    points: z.array(videoPointSchema),
   })
   .strict();
 
@@ -305,7 +350,9 @@ export const videoNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
   videoArrowNodeSchema,
   videoCenterNodeSchema,
+  videoFunctionGraphNodeSchema,
   videoIconNodeSchema,
+  videoParametricGraphNodeSchema,
   videoRectNodeSchema,
   videoStackNodeSchema,
   videoTextNodeSchema,
@@ -319,7 +366,9 @@ export const videoAiNodeSchema = z.discriminatedUnion("type", [
   videoArrowNodeSchema,
   videoCenterNodeSchema,
   videoAiEquationNodeSchema,
+  videoAiFunctionGraphNodeSchema,
   videoAiIconNodeSchema,
+  videoAiParametricGraphNodeSchema,
   videoRectNodeSchema,
   videoRepeatNodeSchema,
   videoStackNodeSchema,

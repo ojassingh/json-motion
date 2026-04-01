@@ -181,8 +181,12 @@ pub enum Node {
     Arrow(ArrowNode),
     #[serde(rename = "center")]
     Center(CenterNode),
+    #[serde(rename = "functionGraph")]
+    FunctionGraph(FunctionGraphNode),
     #[serde(rename = "icon")]
     Icon(IconNode),
+    #[serde(rename = "parametricGraph")]
+    ParametricGraph(ParametricGraphNode),
     #[serde(rename = "rect")]
     Rect(RectNode),
     #[serde(rename = "stack")]
@@ -197,7 +201,9 @@ impl Node {
             Self::Align(n) => &n.base,
             Self::Arrow(n) => &n.base,
             Self::Center(n) => &n.base,
+            Self::FunctionGraph(n) => &n.base,
             Self::Icon(n) => &n.base,
+            Self::ParametricGraph(n) => &n.base,
             Self::Rect(n) => &n.base,
             Self::Stack(n) => &n.base,
             Self::Text(n) => &n.base,
@@ -243,6 +249,12 @@ pub enum ArrowEndpoint {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ArrowPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct GraphPoint {
     pub x: f64,
     pub y: f64,
 }
@@ -300,6 +312,36 @@ pub struct RectNode {
     pub stroke: Option<String>,
     pub stroke_width: Option<f64>,
     pub corner_radius: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FunctionGraphNode {
+    #[serde(flatten)]
+    pub base: NodeBase,
+    pub width: f64,
+    pub height: f64,
+    pub points: Vec<GraphPoint>,
+    pub color: Option<String>,
+    pub stroke_width: Option<f64>,
+    pub show_axes: Option<bool>,
+    pub show_grid: Option<bool>,
+    pub draw_progress: Option<f64>,
+    pub x_range: Option<[f64; 2]>,
+    pub y_range: Option<[f64; 2]>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParametricGraphNode {
+    #[serde(flatten)]
+    pub base: NodeBase,
+    pub width: f64,
+    pub height: f64,
+    pub points: Vec<GraphPoint>,
+    pub color: Option<String>,
+    pub stroke_width: Option<f64>,
+    pub draw_progress: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

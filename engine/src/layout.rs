@@ -94,7 +94,13 @@ fn style_for_node(node: &Node, is_root: bool, measurer: &impl TextMeasurer) -> S
         Node::Arrow(_) => {
             style.size = fixed_size(0.0, 0.0);
         }
+        Node::FunctionGraph(node) => {
+            style.size = fixed_size(node.width, node.height);
+        }
         Node::Icon(node) => {
+            style.size = fixed_size(node.width, node.height);
+        }
+        Node::ParametricGraph(node) => {
             style.size = fixed_size(node.width, node.height);
         }
         Node::Text(node) => {
