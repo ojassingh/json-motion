@@ -8,9 +8,11 @@ import {
   videoAiIconNodeSchema,
   videoAlignNodeSchema,
   videoAnchorSchema,
+  videoArrowNodeSchema,
   videoCenterNodeSchema,
   videoEasingSchema,
   videoRectNodeSchema,
+  videoRepeatNodeSchema,
   videoStackNodeSchema,
   videoTextNodeSchema,
 } from "@/lib/video/schema";
@@ -32,6 +34,11 @@ export const videoCatalog = defineCatalog({
         "Positions exactly one child at a named frame anchor with optional padding.",
       propSchema: videoAlignNodeSchema,
     },
+    arrow: {
+      description:
+        "Draws a straight arrow. Prefer `target` + `position` for callouts that should follow another node; use `from` + `to` for manual connectors or repeated arrows.",
+      propSchema: videoArrowNodeSchema,
+    },
     center: {
       description:
         "Centers exactly one child inside the frame or parent layout box.",
@@ -46,6 +53,11 @@ export const videoCatalog = defineCatalog({
       description:
         "Rectangle shape with optional fill, stroke, and corner radius.",
       propSchema: videoRectNodeSchema,
+    },
+    repeat: {
+      description:
+        "Macro that repeats one leaf template in a 2D lattice. Use `rows`, `cols`, `rowStep`, and `colStep`. Omitted axes default to 0, so `{ y: 48 }` is valid. Best for grids, diagonal patterns, and repeated arrows. `template` should be a single `rect`, `text`, `icon`, or absolute `arrow`. Do not reference a `repeat` node from layout `children`; place it directly with `origin`.",
+      propSchema: videoRepeatNodeSchema,
     },
     stack: {
       description:
@@ -73,6 +85,7 @@ Pad the timeline: add roughly 1 second of delay before the first animation start
 Prefer semantic layout nodes over manual positioning: use \`center\`, \`align\`, and \`stack\`.
 Keep root nodes simple and compose layouts by referencing child IDs in layout nodes.
 Use \`dx\`/\`dy\` in the timeline for relative motion — avoid absolute coordinate math.
+When using \`repeat\`, place it with \`origin\` / \`rowStep\` / \`colStep\` instead of wrapping it in \`center\`, \`align\`, or \`stack\`.
 Keep all elements fully inside the canvas.
 If the request implies unsupported media, reinterpret it as a stylized text-and-shape scene.
 `.trim();

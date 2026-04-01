@@ -25,6 +25,16 @@ pub struct ResolvedText {
     pub text_align: TextAlign,
 }
 
+pub struct ResolvedArrow {
+    pub width: f64,
+    pub height: f64,
+    pub start: (f64, f64),
+    pub end: (f64, f64),
+    pub stroke: (u8, u8, u8),
+    pub stroke_width: f64,
+    pub head_size: f64,
+}
+
 pub struct ResolvedIcon {
     pub width: f64,
     pub height: f64,
@@ -40,6 +50,7 @@ pub struct ResolvedIcon {
 }
 
 pub enum ResolvedNodeData {
+    Arrow(ResolvedArrow),
     Icon(ResolvedIcon),
     Rect(ResolvedRect),
     Text(ResolvedText),

@@ -6,15 +6,15 @@ use indexmap::IndexMap;
 use crate::color;
 use crate::layout;
 use crate::schema::{
-    IconLineCap, IconLineJoin, Node, NodeBase, SceneEntry, TextAlign, TimelineEvent,
-    VideoDescription,
+    Anchor, ArrowEndpoint, ArrowPosition, IconLineCap, IconLineJoin, Node, NodeBase, SceneEntry,
+    TextAlign, TimelineEvent, VideoDescription,
 };
 use crate::shared::consts::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_SCENE_BG, DEFAULT_TEXT_COLOR,
 };
 use crate::shared::types::{
-    ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
-    ResolvedRect, ResolvedText,
+    ResolvedArrow, ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind,
+    ResolvedNodeData, ResolvedRect, ResolvedText,
 };
 use crate::text::TextMeasurer;
 
@@ -41,6 +41,9 @@ const NUMERIC_TRACK_PROPERTIES: [&str; 16] = [
 ];
 
 const COLOR_TRACK_PROPERTIES: [&str; 3] = ["fill", "stroke", "color"];
+const DEFAULT_ARROW_GAP: f64 = 12.0;
+const DEFAULT_ARROW_HEAD_SIZE: f64 = 12.0;
+const DEFAULT_ARROW_LENGTH: f64 = 80.0;
 
 #[derive(Default)]
 struct NodeTracks {
@@ -64,7 +67,7 @@ pub struct FrameRenderHint {
 pub struct PrecomputedScene<'a> {
     pub(crate) background: (u8, u8, u8),
     pub(crate) can_reuse_rendered_frame: bool,
-    pub(crate) cached_layout: Option<HashMap<String, (f64, f64)>>,
+    pub(crate) cached_layout: Option<HashMap<String, layout::LayoutBox>>,
     pub(crate) end_frame_exclusive: u32,
     pub(crate) fps: f64,
     node_tracks: HashMap<String, NodeTracks>,
@@ -237,6 +240,10 @@ fn classify_render_batch_kind(
     has_layout_nodes: bool,
     has_static_layout: bool,
 ) -> ResolvedNodeBatchKind {
+    if matches!(node, Node::Arrow(_)) {
+        return ResolvedNodeBatchKind::Dynamic;
+    }
+
     if has_layout_nodes && !has_static_layout {
         return ResolvedNodeBatchKind::Dynamic;
     }
@@ -249,6 +256,7 @@ fn classify_render_batch_kind(
     }
 
     let node_dynamic_props: &[&str] = match node {
+        Node::Arrow(_) => &["strokeWidth", "stroke"],
         Node::Icon(_) => &["width", "height", "strokeWidth", "fill", "stroke"],
         Node::Rect(_) => &["width", "height", "cornerRadius", "strokeWidth", "fill", "stroke"],
         Node::Text(_) => &["size", "color"],
@@ -316,6 +324,15 @@ fn apply_base(node: &mut Node, tracks: &NodeTracks, t: f64) {
 
 fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
     match node {
+        Node::Arrow(arrow) => {
+            arrow.stroke = tracks.color(
+                "stroke",
+                Some(arrow.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+                t,
+            );
+            arrow.stroke_width =
+                Some(tracks.num("strokeWidth", arrow.stroke_width.unwrap_or(2.0), t));
+        }
         Node::Icon(icon) => {
             icon.width = tracks.num("width", icon.width, t);
             icon.height = tracks.num("height", icon.height, t);
@@ -354,6 +371,7 @@ fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
 fn base_mut(node: &mut Node) -> &mut NodeBase {
     match node {
         Node::Align(node) => &mut node.base,
+        Node::Arrow(node) => &mut node.base,
         Node::Center(node) => &mut node.base,
         Node::Icon(node) => &mut node.base,
         Node::Rect(node) => &mut node.base,
@@ -366,7 +384,7 @@ fn resolve_common(
     base: &NodeBase,
     batch_kind: ResolvedNodeBatchKind,
     tracks: &NodeTracks,
-    layout_pos: (f64, f64),
+    layout_box: layout::LayoutBox,
     source_index: usize,
     t: f64,
     data: ResolvedNodeData,
@@ -382,21 +400,167 @@ fn resolve_common(
         skew_x: tracks.num("skewX", base.skew_x.unwrap_or(0.0), t),
         skew_y: tracks.num("skewY", base.skew_y.unwrap_or(0.0), t),
         source_index,
-        x: layout_pos.0,
-        y: layout_pos.1,
+        x: layout_box.x,
+        y: layout_box.y,
         z_index: base.z_index.unwrap_or(0),
     }
+}
+
+fn layout_anchor_point(layout_box: layout::LayoutBox, anchor: Anchor) -> (f64, f64) {
+    match anchor {
+        Anchor::TopLeft => (layout_box.x, layout_box.y),
+        Anchor::TopCenter => (layout_box.x + layout_box.width / 2.0, layout_box.y),
+        Anchor::TopRight => (layout_box.x + layout_box.width, layout_box.y),
+        Anchor::CenterLeft => (layout_box.x, layout_box.y + layout_box.height / 2.0),
+        Anchor::Center => (
+            layout_box.x + layout_box.width / 2.0,
+            layout_box.y + layout_box.height / 2.0,
+        ),
+        Anchor::CenterRight => (
+            layout_box.x + layout_box.width,
+            layout_box.y + layout_box.height / 2.0,
+        ),
+        Anchor::BottomLeft => (layout_box.x, layout_box.y + layout_box.height),
+        Anchor::BottomCenter => (
+            layout_box.x + layout_box.width / 2.0,
+            layout_box.y + layout_box.height,
+        ),
+        Anchor::BottomRight => (layout_box.x + layout_box.width, layout_box.y + layout_box.height),
+    }
+}
+
+fn resolve_arrow_endpoint(
+    endpoint: &ArrowEndpoint,
+    layout_boxes: &HashMap<String, layout::LayoutBox>,
+) -> Result<(f64, f64), String> {
+    match endpoint {
+        ArrowEndpoint::Point(point) => Ok((point.x, point.y)),
+        ArrowEndpoint::NodeRef(node_ref) => {
+            let target_box = layout_boxes
+                .get(&node_ref.node)
+                .copied()
+                .ok_or_else(|| format!("missing arrow endpoint node {}", node_ref.node))?;
+            Ok(layout_anchor_point(
+                target_box,
+                node_ref.anchor.unwrap_or(Anchor::Center),
+            ))
+        }
+    }
+}
+
+fn resolve_arrow_target_points(
+    target: &str,
+    position: ArrowPosition,
+    gap: f64,
+    length: f64,
+    layout_boxes: &HashMap<String, layout::LayoutBox>,
+) -> Result<((f64, f64), (f64, f64)), String> {
+    let target_box = layout_boxes
+        .get(target)
+        .copied()
+        .ok_or_else(|| format!("missing arrow target node {target}"))?;
+    let tip = match position {
+        ArrowPosition::Above => layout_anchor_point(target_box, Anchor::TopCenter),
+        ArrowPosition::Below => layout_anchor_point(target_box, Anchor::BottomCenter),
+        ArrowPosition::Left => layout_anchor_point(target_box, Anchor::CenterLeft),
+        ArrowPosition::Right => layout_anchor_point(target_box, Anchor::CenterRight),
+    };
+    let tail = match position {
+        ArrowPosition::Above => (tip.0, tip.1 - gap - length),
+        ArrowPosition::Below => (tip.0, tip.1 + gap + length),
+        ArrowPosition::Left => (tip.0 - gap - length, tip.1),
+        ArrowPosition::Right => (tip.0 + gap + length, tip.1),
+    };
+    Ok((tail, tip))
+}
+
+fn resolve_arrow_node(
+    arrow: &crate::schema::ArrowNode,
+    batch_kind: ResolvedNodeBatchKind,
+    tracks: &NodeTracks,
+    layout_box: layout::LayoutBox,
+    source_index: usize,
+    t: f64,
+    layout_boxes: &HashMap<String, layout::LayoutBox>,
+) -> Result<ResolvedNode, String> {
+    let uses_target_mode = arrow.target.is_some() || arrow.position.is_some();
+    let uses_endpoint_mode = arrow.from.is_some() || arrow.to.is_some();
+    let (start, end) = if uses_target_mode && uses_endpoint_mode {
+        return Err("arrow cannot mix target placement with explicit endpoints".to_string());
+    } else if let (Some(target), Some(position)) = (&arrow.target, arrow.position) {
+        resolve_arrow_target_points(
+            target,
+            position,
+            arrow.gap.unwrap_or(DEFAULT_ARROW_GAP),
+            arrow.length.unwrap_or(DEFAULT_ARROW_LENGTH),
+            layout_boxes,
+        )?
+    } else if let (Some(from), Some(to)) = (&arrow.from, &arrow.to) {
+        (
+            resolve_arrow_endpoint(from, layout_boxes)?,
+            resolve_arrow_endpoint(to, layout_boxes)?,
+        )
+    } else {
+        return Err("arrow must define either target placement or explicit endpoints".to_string());
+    };
+
+    let start = (start.0 + layout_box.x, start.1 + layout_box.y);
+    let end = (end.0 + layout_box.x, end.1 + layout_box.y);
+    let min_x = start.0.min(end.0);
+    let min_y = start.1.min(end.1);
+    let max_x = start.0.max(end.0);
+    let max_y = start.1.max(end.1);
+    let stroke_hex = tracks
+        .color(
+            "stroke",
+            Some(arrow.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+            t,
+        )
+        .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
+
+    Ok(resolve_common(
+        &arrow.base,
+        batch_kind,
+        tracks,
+        layout::LayoutBox {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        },
+        source_index,
+        t,
+        ResolvedNodeData::Arrow(ResolvedArrow {
+            width: max_x - min_x,
+            height: max_y - min_y,
+            start: (start.0 - min_x, start.1 - min_y),
+            end: (end.0 - min_x, end.1 - min_y),
+            stroke: color::parse_hex(&stroke_hex),
+            stroke_width: tracks.num("strokeWidth", arrow.stroke_width.unwrap_or(2.0), t),
+            head_size: arrow.head_size.unwrap_or(DEFAULT_ARROW_HEAD_SIZE),
+        }),
+    ))
 }
 
 fn resolve_node(
     node: &Node,
     batch_kind: ResolvedNodeBatchKind,
     tracks: &NodeTracks,
-    layout_pos: (f64, f64),
+    layout_box: layout::LayoutBox,
     source_index: usize,
     t: f64,
-) -> Option<ResolvedNode> {
+    layout_boxes: &HashMap<String, layout::LayoutBox>,
+) -> Result<Option<ResolvedNode>, String> {
     match node {
+        Node::Arrow(arrow) => Ok(Some(resolve_arrow_node(
+            arrow,
+            batch_kind,
+            tracks,
+            layout_box,
+            source_index,
+            t,
+            layout_boxes,
+        )?)),
         Node::Icon(icon) => {
             let stroke_hex = tracks
                 .color(
@@ -405,11 +569,11 @@ fn resolve_node(
                     t,
                 )
                 .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
-            Some(resolve_common(
+            Ok(Some(resolve_common(
                 &icon.base,
                 batch_kind,
                 tracks,
-                layout_pos,
+                layout_box,
                 source_index,
                 t,
                 ResolvedNodeData::Icon(ResolvedIcon {
@@ -428,13 +592,13 @@ fn resolve_node(
                     line_join: icon.line_join.unwrap_or(IconLineJoin::Round),
                     elements: icon.elements.clone(),
                 }),
-            ))
+            )))
         }
-        Node::Rect(rect) => Some(resolve_common(
+        Node::Rect(rect) => Ok(Some(resolve_common(
             &rect.base,
             batch_kind,
             tracks,
-            layout_pos,
+            layout_box,
             source_index,
             t,
             ResolvedNodeData::Rect(ResolvedRect {
@@ -451,7 +615,7 @@ fn resolve_node(
                 stroke_width: tracks.num("strokeWidth", rect.stroke_width.unwrap_or(0.0), t),
                 corner_radius: tracks.num("cornerRadius", rect.corner_radius.unwrap_or(0.0), t),
             }),
-        )),
+        ))),
         Node::Text(text) => {
             let font_size = tracks.num("size", text.size.unwrap_or(DEFAULT_FONT_SIZE), t);
             let color_hex = tracks
@@ -461,11 +625,11 @@ fn resolve_node(
                     t,
                 )
                 .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
-            Some(resolve_common(
+            Ok(Some(resolve_common(
                 &text.base,
                 batch_kind,
                 tracks,
-                layout_pos,
+                layout_box,
                 source_index,
                 t,
                 ResolvedNodeData::Text(ResolvedText {
@@ -479,9 +643,9 @@ fn resolve_node(
                     max_width: text.max_width,
                     text_align: text.text_align.unwrap_or(TextAlign::Left),
                 }),
-            ))
+            )))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -530,7 +694,9 @@ pub fn resolve_frame_fast(
             .render_batch_kinds
             .get(id)
             .unwrap_or(&ResolvedNodeBatchKind::Dynamic);
-        if let Some(resolved) = resolve_node(node, batch_kind, tracks, pos, source_index, t) {
+        if let Some(resolved) =
+            resolve_node(node, batch_kind, tracks, pos, source_index, t, &layout_positions)?
+        {
             nodes.push(resolved);
         }
     }

@@ -14,6 +14,7 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import { resolveAiSceneNodes } from "@/lib/video/lucide";
+import { expandAiSceneMacros } from "@/lib/video/macros";
 import { videoDescriptionSchema } from "@/lib/video/schema";
 
 export const convertAiOutputToVideoDescription = async (
@@ -23,12 +24,13 @@ export const convertAiOutputToVideoDescription = async (
 
   const scenes = await Promise.all(
     aiOutput.scenes.map(async (scene) => {
+      const expandedScene = expandAiSceneMacros(scene);
       const duration = Math.max(
         1,
-        Math.round(scene.duration * DEFAULT_CANVAS_FPS)
+        Math.round(expandedScene.duration * DEFAULT_CANVAS_FPS)
       );
-      const nodes = await resolveAiSceneNodes(scene.nodes);
-      const converted = { ...scene, duration, nodes, startFrame };
+      const nodes = await resolveAiSceneNodes(expandedScene.nodes);
+      const converted = { ...expandedScene, duration, nodes, startFrame };
       startFrame += duration;
       return converted;
     })
