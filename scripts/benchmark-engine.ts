@@ -42,6 +42,12 @@ const PARALLEL_WORKERS = Number.parseInt(
   process.env.BENCH_PARALLEL_WORKERS ?? "1",
   10
 );
+const CASE_FILTER = new Set(
+  (process.env.BENCH_CASE_FILTER ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
 const TIMINGS_PATTERN = /timings:\s+render=([0-9.]+)ms,\s+encode=([0-9.]+)ms/;
 const DARWIN_MAX_RSS_PATTERN = /maximum resident set size\s+(\d+)/i;
 const LINUX_MAX_RSS_PATTERN = /Maximum resident set size \(kbytes\):\s+(\d+)/i;
@@ -600,10 +606,13 @@ function main() {
   }
 
   console.log(
-    `codec=${CODEC ?? "auto"} verifyCodec=${VERIFY_CODEC} iterations=${ITERATIONS} parallelWorkers=${PARALLEL_WORKERS}`
+    `codec=${CODEC ?? "auto"} verifyCodec=${VERIFY_CODEC} iterations=${ITERATIONS} parallelWorkers=${PARALLEL_WORKERS} cases=${CASE_FILTER.size > 0 ? [...CASE_FILTER].join(",") : "all"}`
   );
 
   for (const testCase of CASES) {
+    if (CASE_FILTER.size > 0 && !CASE_FILTER.has(testCase.name)) {
+      continue;
+    }
     console.log(JSON.stringify(formatSummary(testCase)));
   }
 }
