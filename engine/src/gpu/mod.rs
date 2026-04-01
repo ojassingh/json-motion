@@ -13,11 +13,13 @@ use wgpu::util::DeviceExt;
 
 use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
 use crate::shared::types::{
-    ResolvedFrame, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedText,
+    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine,
+    ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedParametricGraph,
+    ResolvedText,
 };
 use crate::text::TextMeasurer;
 
-use path_pipeline::{PathBatch, PathPipeline, PathVertex};
+use path_pipeline::{PathBatch, PathPipeline, PathVertex, StrokeStyle};
 use readback::ReadbackBuffer;
 use rect::{RectBatch, RectInstance, RectPipeline};
 use text_pipeline::{TextBatch, TextInstance, TextPipeline};
@@ -538,7 +540,14 @@ impl WgpuBackend {
         frame.nodes.iter().all(|node| {
             matches!(
                 node.data,
-                ResolvedNodeData::Rect(_) | ResolvedNodeData::Text(_) | ResolvedNodeData::Icon(_)
+                ResolvedNodeData::Arrow(_)
+                    | ResolvedNodeData::Circle(_)
+                    | ResolvedNodeData::FunctionGraph(_)
+                    | ResolvedNodeData::Icon(_)
+                    | ResolvedNodeData::Line(_)
+                    | ResolvedNodeData::ParametricGraph(_)
+                    | ResolvedNodeData::Rect(_)
+                    | ResolvedNodeData::Text(_)
             )
         })
     }
@@ -592,17 +601,11 @@ impl WgpuBackend {
             .iter()
             .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Dynamic)
         {
-            if let ResolvedNodeData::Icon(icon) = &node.data {
-                let cached = self.cached_icon_geometry(icon);
-                path_pipeline::append_transformed_icon(
-                    node,
-                    icon,
-                    &cached.vertices,
-                    &cached.indices,
-                    &mut dynamic_path_vertices,
-                    &mut dynamic_path_indices,
-                );
-            }
+            self.append_path_geometry_for_node(
+                node,
+                &mut dynamic_path_vertices,
+                &mut dynamic_path_indices,
+            );
         }
 
         Ok(PreparedFrameBatch {
@@ -670,17 +673,11 @@ impl WgpuBackend {
             .iter()
             .filter(|node| node.batch_kind == ResolvedNodeBatchKind::Static)
         {
-            if let ResolvedNodeData::Icon(icon) = &node.data {
-                let cached = self.cached_icon_geometry(icon);
-                path_pipeline::append_transformed_icon(
-                    node,
-                    icon,
-                    &cached.vertices,
-                    &cached.indices,
-                    &mut static_path_vertices,
-                    &mut static_path_indices,
-                );
-            }
+            self.append_path_geometry_for_node(
+                node,
+                &mut static_path_vertices,
+                &mut static_path_indices,
+            );
         }
 
         let batch = CachedSceneBatch {
@@ -803,6 +800,39 @@ impl WgpuBackend {
             let (vertices, indices) = path_pipeline::tessellate_icon(icon);
             CachedPathGeometry { vertices, indices }
         })
+    }
+
+    fn append_path_geometry_for_node(
+        &mut self,
+        node: &ResolvedNode,
+        out_vertices: &mut Vec<PathVertex>,
+        out_indices: &mut Vec<u32>,
+    ) {
+        match &node.data {
+            ResolvedNodeData::Arrow(arrow) => append_arrow_geometry(node, arrow, out_vertices, out_indices),
+            ResolvedNodeData::Circle(circle) => {
+                append_circle_geometry(node, circle, out_vertices, out_indices)
+            }
+            ResolvedNodeData::FunctionGraph(graph) => {
+                append_function_graph_geometry(node, graph, out_vertices, out_indices)
+            }
+            ResolvedNodeData::Icon(icon) => {
+                let cached = self.cached_icon_geometry(icon);
+                path_pipeline::append_transformed_icon(
+                    node,
+                    icon,
+                    &cached.vertices,
+                    &cached.indices,
+                    out_vertices,
+                    out_indices,
+                );
+            }
+            ResolvedNodeData::Line(line) => append_line_geometry(node, line, out_vertices, out_indices),
+            ResolvedNodeData::ParametricGraph(graph) => {
+                append_parametric_graph_geometry(node, graph, out_vertices, out_indices)
+            }
+            ResolvedNodeData::Rect(_) | ResolvedNodeData::Text(_) => {}
+        }
     }
 }
 
@@ -936,6 +966,437 @@ fn hash_points(points: &[(f64, f64)], hasher: &mut DefaultHasher) {
     }
 }
 
+fn rgba(color: (u8, u8, u8), alpha: f32) -> [f32; 4] {
+    let normalized_alpha = alpha.clamp(0.0, 1.0);
+    [
+        color.0 as f32 / 255.0 * normalized_alpha,
+        color.1 as f32 / 255.0 * normalized_alpha,
+        color.2 as f32 / 255.0 * normalized_alpha,
+        normalized_alpha,
+    ]
+}
+
+fn muted_color((r, g, b): (u8, u8, u8), factor: f32) -> (u8, u8, u8) {
+    (
+        (r as f32 * factor).round() as u8,
+        (g as f32 * factor).round() as u8,
+        (b as f32 * factor).round() as u8,
+    )
+}
+
+fn stroke_style(
+    color: (u8, u8, u8),
+    width: f64,
+    line_cap: lyon::tessellation::LineCap,
+    join: lyon::tessellation::LineJoin,
+    alpha: f32,
+) -> StrokeStyle {
+    StrokeStyle {
+        color: rgba(color, alpha),
+        join,
+        line_cap,
+        width: width as f32,
+    }
+}
+
+struct PathGeometrySpec<'a> {
+    d: &'a str,
+    fill_color: Option<[f32; 4]>,
+    height: f64,
+    stroke: Option<StrokeStyle>,
+    width: f64,
+}
+
+fn append_svg_path_geometry(
+    node: &ResolvedNode,
+    spec: PathGeometrySpec<'_>,
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    let (vertices, indices) =
+        path_pipeline::tessellate_svg_path(spec.d, spec.fill_color, spec.stroke.as_ref());
+    path_pipeline::append_transformed_geometry(
+        node,
+        spec.width,
+        spec.height,
+        &vertices,
+        &indices,
+        out_vertices,
+        out_indices,
+    );
+}
+
+fn svg_line_path(start: (f64, f64), end: (f64, f64)) -> String {
+    format!("M{} {} L{} {}", start.0, start.1, end.0, end.1)
+}
+
+fn svg_polyline_path(points: &[(f64, f64)], close: bool) -> Option<String> {
+    let (first_x, first_y) = *points.first()?;
+    let mut d = format!("M{first_x} {first_y}");
+    for (x, y) in points.iter().skip(1) {
+        d.push_str(&format!(" L{x} {y}"));
+    }
+    if close {
+        d.push_str(" Z");
+    }
+    Some(d)
+}
+
+fn svg_circle_path(radius: f64) -> String {
+    format!(
+        "M0,{r} a{r},{r} 0 1,0 {diameter},0 a{r},{r} 0 1,0 -{diameter},0",
+        r = radius,
+        diameter = radius * 2.0
+    )
+}
+
+fn svg_arc_path(radius: f64, progress: f64) -> Option<String> {
+    let clamped = progress.clamp(0.0, 1.0);
+    if clamped <= 0.0 {
+        return None;
+    }
+    if clamped >= 0.999_999 {
+        return Some(svg_circle_path(radius));
+    }
+
+    let start_angle = -std::f64::consts::FRAC_PI_2;
+    let end_angle = start_angle + std::f64::consts::TAU * clamped;
+    let cx = radius;
+    let cy = radius;
+    let start_x = cx + radius * start_angle.cos();
+    let start_y = cy + radius * start_angle.sin();
+    let end_x = cx + radius * end_angle.cos();
+    let end_y = cy + radius * end_angle.sin();
+    let large_arc = u8::from(clamped > 0.5);
+    Some(format!(
+        "M{start_x} {start_y} A{radius} {radius} 0 {large_arc} 1 {end_x} {end_y}"
+    ))
+}
+
+fn line_cap_to_lyon(cap: crate::schema::LineCap) -> lyon::tessellation::LineCap {
+    match cap {
+        crate::schema::LineCap::Round => lyon::tessellation::LineCap::Round,
+        crate::schema::LineCap::Square => lyon::tessellation::LineCap::Square,
+        crate::schema::LineCap::Butt => lyon::tessellation::LineCap::Butt,
+    }
+}
+
+fn graph_visible_points(points: &[(f64, f64)], draw_progress: f64) -> Option<&[(f64, f64)]> {
+    let count = ((points.len() as f64) * draw_progress.clamp(0.0, 1.0)).floor() as usize;
+    if count < 2 {
+        return None;
+    }
+    Some(&points[..count])
+}
+
+fn append_arrow_geometry(
+    node: &ResolvedNode,
+    arrow: &ResolvedArrow,
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    if arrow.stroke_width <= 0.0 {
+        return;
+    }
+
+    let shaft_path = svg_line_path(arrow.start, arrow.end);
+    append_svg_path_geometry(
+        node,
+        PathGeometrySpec {
+            d: &shaft_path,
+            fill_color: None,
+            height: arrow.height,
+            stroke: Some(stroke_style(
+                arrow.stroke,
+                arrow.stroke_width,
+                lyon::tessellation::LineCap::Butt,
+                lyon::tessellation::LineJoin::MiterClip,
+                1.0,
+            )),
+            width: arrow.width,
+        },
+        out_vertices,
+        out_indices,
+    );
+
+    let dx = arrow.end.0 - arrow.start.0;
+    let dy = arrow.end.1 - arrow.start.1;
+    let length = (dx * dx + dy * dy).sqrt();
+    if length <= f64::EPSILON {
+        return;
+    }
+
+    let ux = dx / length;
+    let uy = dy / length;
+    let nx = -uy;
+    let ny = ux;
+    let back_x = arrow.end.0 - ux * arrow.head_size;
+    let back_y = arrow.end.1 - uy * arrow.head_size;
+    let wing = arrow.head_size * 0.45;
+    let points = [
+        arrow.end,
+        (back_x + nx * wing, back_y + ny * wing),
+        (back_x - nx * wing, back_y - ny * wing),
+    ];
+    if let Some(head_path) = svg_polyline_path(&points, true) {
+        append_svg_path_geometry(
+            node,
+            PathGeometrySpec {
+                d: &head_path,
+                fill_color: Some(rgba(arrow.stroke, 1.0)),
+                height: arrow.height,
+                stroke: None,
+                width: arrow.width,
+            },
+            out_vertices,
+            out_indices,
+        );
+    }
+}
+
+fn append_circle_geometry(
+    node: &ResolvedNode,
+    circle: &ResolvedCircle,
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    let diameter = circle.radius * 2.0;
+    let full_circle_path = svg_circle_path(circle.radius);
+
+    if let Some(fill) = circle.fill {
+        append_svg_path_geometry(
+            node,
+            PathGeometrySpec {
+                d: &full_circle_path,
+                fill_color: Some(rgba(fill, 1.0)),
+                height: diameter,
+                stroke: None,
+                width: diameter,
+            },
+            out_vertices,
+            out_indices,
+        );
+    }
+
+    if let Some(stroke) = circle.stroke {
+        if circle.stroke_width > 0.0 {
+            if let Some(stroke_path) = svg_arc_path(circle.radius, circle.draw_progress) {
+                append_svg_path_geometry(
+                    node,
+                    PathGeometrySpec {
+                        d: &stroke_path,
+                        fill_color: None,
+                        height: diameter,
+                        stroke: Some(stroke_style(
+                            stroke,
+                            circle.stroke_width,
+                            lyon::tessellation::LineCap::Butt,
+                            lyon::tessellation::LineJoin::Round,
+                            1.0,
+                        )),
+                        width: diameter,
+                    },
+                    out_vertices,
+                    out_indices,
+                );
+            }
+        }
+    }
+}
+
+fn append_function_graph_geometry(
+    node: &ResolvedNode,
+    graph: &ResolvedFunctionGraph,
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    const GRID_DIVISIONS: usize = 5;
+
+    if graph.show_grid {
+        let grid_color = muted_color(graph.color, 0.45);
+        for step in 0..=GRID_DIVISIONS {
+            let ratio = step as f64 / GRID_DIVISIONS as f64;
+            let x = graph.width * ratio;
+            let y = graph.height * ratio;
+            for path in [
+                svg_line_path((x, 0.0), (x, graph.height)),
+                svg_line_path((0.0, y), (graph.width, y)),
+            ] {
+                append_svg_path_geometry(
+                    node,
+                    PathGeometrySpec {
+                        d: &path,
+                        fill_color: None,
+                        height: graph.height,
+                        stroke: Some(stroke_style(
+                            grid_color,
+                            1.0,
+                            lyon::tessellation::LineCap::Butt,
+                            lyon::tessellation::LineJoin::MiterClip,
+                            1.0 / 3.0,
+                        )),
+                        width: graph.width,
+                    },
+                    out_vertices,
+                    out_indices,
+                );
+            }
+        }
+    }
+
+    if graph.show_axes {
+        if let (Some([x_min, x_max]), Some([y_min, y_max])) = (graph.x_range, graph.y_range) {
+            let axis_color = muted_color(graph.color, 0.65);
+            if x_min <= 0.0 && x_max >= 0.0 && x_min != x_max {
+                let axis_x = (0.0 - x_min) / (x_max - x_min) * graph.width;
+                let path = svg_line_path((axis_x, 0.0), (axis_x, graph.height));
+                append_svg_path_geometry(
+                    node,
+                    PathGeometrySpec {
+                        d: &path,
+                        fill_color: None,
+                        height: graph.height,
+                        stroke: Some(stroke_style(
+                            axis_color,
+                            1.5,
+                            lyon::tessellation::LineCap::Butt,
+                            lyon::tessellation::LineJoin::MiterClip,
+                            0.5,
+                        )),
+                        width: graph.width,
+                    },
+                    out_vertices,
+                    out_indices,
+                );
+            }
+            if y_min <= 0.0 && y_max >= 0.0 && y_min != y_max {
+                let axis_y = graph.height - ((0.0 - y_min) / (y_max - y_min) * graph.height);
+                let path = svg_line_path((0.0, axis_y), (graph.width, axis_y));
+                append_svg_path_geometry(
+                    node,
+                    PathGeometrySpec {
+                        d: &path,
+                        fill_color: None,
+                        height: graph.height,
+                        stroke: Some(stroke_style(
+                            axis_color,
+                            1.5,
+                            lyon::tessellation::LineCap::Butt,
+                            lyon::tessellation::LineJoin::MiterClip,
+                            0.5,
+                        )),
+                        width: graph.width,
+                    },
+                    out_vertices,
+                    out_indices,
+                );
+            }
+        }
+    }
+
+    if graph.stroke_width <= 0.0 {
+        return;
+    }
+    let Some(points) = graph_visible_points(&graph.points, graph.draw_progress) else {
+        return;
+    };
+    let Some(path) = svg_polyline_path(points, false) else {
+        return;
+    };
+    append_svg_path_geometry(
+        node,
+        PathGeometrySpec {
+            d: &path,
+            fill_color: None,
+            height: graph.height,
+            stroke: Some(stroke_style(
+                graph.color,
+                graph.stroke_width,
+                lyon::tessellation::LineCap::Butt,
+                lyon::tessellation::LineJoin::MiterClip,
+                1.0,
+            )),
+            width: graph.width,
+        },
+        out_vertices,
+        out_indices,
+    );
+}
+
+fn append_line_geometry(
+    node: &ResolvedNode,
+    line: &ResolvedLine,
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    if line.stroke_width <= 0.0 {
+        return;
+    }
+    let progress = line.draw_progress.clamp(0.0, 1.0);
+    if progress <= 0.0 {
+        return;
+    }
+    let dx = line.x2 - line.x1;
+    let dy = line.y2 - line.y1;
+    let end = (line.x1 + dx * progress, line.y1 + dy * progress);
+    let width = (line.x2 - line.x1).abs();
+    let height = (line.y2 - line.y1).abs();
+    let path = svg_line_path((line.x1, line.y1), end);
+    append_svg_path_geometry(
+        node,
+        PathGeometrySpec {
+            d: &path,
+            fill_color: None,
+            height,
+            stroke: Some(stroke_style(
+                line.stroke,
+                line.stroke_width,
+                line_cap_to_lyon(line.cap),
+                lyon::tessellation::LineJoin::MiterClip,
+                1.0,
+            )),
+            width,
+        },
+        out_vertices,
+        out_indices,
+    );
+}
+
+fn append_parametric_graph_geometry(
+    node: &ResolvedNode,
+    graph: &ResolvedParametricGraph,
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    if graph.stroke_width <= 0.0 {
+        return;
+    }
+    let Some(points) = graph_visible_points(&graph.points, graph.draw_progress) else {
+        return;
+    };
+    let Some(path) = svg_polyline_path(points, false) else {
+        return;
+    };
+    append_svg_path_geometry(
+        node,
+        PathGeometrySpec {
+            d: &path,
+            fill_color: None,
+            height: graph.height,
+            stroke: Some(stroke_style(
+                graph.color,
+                graph.stroke_width,
+                lyon::tessellation::LineCap::Butt,
+                lyon::tessellation::LineJoin::MiterClip,
+                1.0,
+            )),
+            width: graph.width,
+        },
+        out_vertices,
+        out_indices,
+    );
+}
+
 impl RenderBackend for WgpuBackend {
     fn render_into(
         &mut self,
@@ -1000,12 +1461,195 @@ fn make_framebuffers(
 mod tests {
     use super::WgpuBackend;
     use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, TextAlign};
+    use crate::schema::{
+        IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap, TextAlign,
+    };
     use crate::shared::types::{
-        ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
-        ResolvedRect, ResolvedText,
+        ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
+        ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+        ResolvedParametricGraph, ResolvedRect, ResolvedText,
     };
     use crate::text::SkiaTextMeasurer;
+
+    fn pixel_diff_metrics(cpu_buf: &FrameBuffer, gpu_buf: &FrameBuffer) -> (u64, u32) {
+        let mut total_diff: u64 = 0;
+        let mut changed_pixels: u32 = 0;
+
+        for (cpu_px, gpu_px) in cpu_buf
+            .pixels()
+            .chunks_exact(4)
+            .zip(gpu_buf.pixels().chunks_exact(4))
+        {
+            let pixel_diff = cpu_px
+                .iter()
+                .zip(gpu_px.iter())
+                .map(|(a, b)| a.abs_diff(*b) as u32)
+                .sum::<u32>();
+            total_diff += pixel_diff as u64;
+            if pixel_diff > 48 {
+                changed_pixels += 1;
+            }
+        }
+
+        (total_diff, changed_pixels)
+    }
+
+    fn count_non_background_pixels(buffer: &FrameBuffer, background: (u8, u8, u8)) -> usize {
+        buffer
+            .pixels()
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0] != background.0 || pixel[1] != background.1 || pixel[2] != background.2)
+            .count()
+    }
+
+    fn direct_gpu_render(
+        frame: &ResolvedFrame,
+        width: u32,
+        height: u32,
+        measurer: &SkiaTextMeasurer,
+    ) -> FrameBuffer {
+        let mut gpu = WgpuBackend::new(width, height).expect("gpu backend init");
+        let mut gpu_buf = FrameBuffer::new(width, height);
+        gpu.submit_frame(frame, measurer).expect("submit frame");
+        gpu.collect_frame(&mut gpu_buf).expect("collect frame");
+        gpu_buf
+    }
+
+    fn vector_frame() -> ResolvedFrame {
+        ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![
+                ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
+                    data: ResolvedNodeData::Circle(ResolvedCircle {
+                        radius: 16.0,
+                        fill: Some((56, 189, 248)),
+                        stroke: Some((15, 23, 42)),
+                        stroke_width: 2.0,
+                        draw_progress: 0.75,
+                    }),
+                    x: 8.0,
+                    y: 8.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 0,
+                    source_index: 0,
+                },
+                ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
+                    data: ResolvedNodeData::Arrow(ResolvedArrow {
+                        width: 38.0,
+                        height: 24.0,
+                        start: (0.0, 12.0),
+                        end: (38.0, 12.0),
+                        stroke: (34, 197, 94),
+                        stroke_width: 3.0,
+                        head_size: 10.0,
+                    }),
+                    x: 8.0,
+                    y: 52.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 1,
+                    source_index: 1,
+                },
+                ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
+                    data: ResolvedNodeData::Line(ResolvedLine {
+                        x1: 0.0,
+                        y1: 0.0,
+                        x2: 42.0,
+                        y2: 20.0,
+                        stroke: (249, 115, 22),
+                        stroke_width: 3.0,
+                        cap: LineCap::Round,
+                        draw_progress: 1.0,
+                    }),
+                    x: 12.0,
+                    y: 94.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 2,
+                    source_index: 2,
+                },
+                ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
+                    data: ResolvedNodeData::FunctionGraph(ResolvedFunctionGraph {
+                        width: 56.0,
+                        height: 40.0,
+                        points: vec![
+                            (0.0, 30.0),
+                            (14.0, 20.0),
+                            (28.0, 10.0),
+                            (42.0, 20.0),
+                            (56.0, 30.0),
+                        ],
+                        color: (14, 165, 233),
+                        stroke_width: 2.0,
+                        show_axes: true,
+                        show_grid: true,
+                        draw_progress: 1.0,
+                        x_range: Some([-1.0, 1.0]),
+                        y_range: Some([-1.0, 1.0]),
+                    }),
+                    x: 64.0,
+                    y: 8.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 3,
+                    source_index: 3,
+                },
+                ResolvedNode {
+                    batch_kind: ResolvedNodeBatchKind::Dynamic,
+                    data: ResolvedNodeData::ParametricGraph(ResolvedParametricGraph {
+                        width: 44.0,
+                        height: 44.0,
+                        points: vec![
+                            (22.0, 0.0),
+                            (35.0, 10.0),
+                            (44.0, 22.0),
+                            (35.0, 34.0),
+                            (22.0, 44.0),
+                            (9.0, 34.0),
+                            (0.0, 22.0),
+                            (9.0, 10.0),
+                            (22.0, 0.0),
+                        ],
+                        color: (244, 114, 182),
+                        stroke_width: 2.0,
+                        draw_progress: 1.0,
+                    }),
+                    x: 74.0,
+                    y: 72.0,
+                    opacity: 1.0,
+                    rotation: 0.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    skew_x: 0.0,
+                    skew_y: 0.0,
+                    z_index: 4,
+                    source_index: 4,
+                },
+            ],
+            scene_cache_key: 0,
+        }
+    }
 
     #[cfg(feature = "gpu")]
     #[test]
@@ -1104,27 +1748,37 @@ mod tests {
         gpu.render_into(&frame, &mut gpu_buf, &measurer)
             .expect("gpu render");
 
-        let mut total_diff: u64 = 0;
-        let mut changed_pixels: u32 = 0;
-        for (cpu_px, gpu_px) in cpu_buf
-            .pixels()
-            .chunks_exact(4)
-            .zip(gpu_buf.pixels().chunks_exact(4))
-        {
-            let pixel_diff = cpu_px
-                .iter()
-                .zip(gpu_px.iter())
-                .map(|(a, b)| a.abs_diff(*b) as u32)
-                .sum::<u32>();
-            total_diff += pixel_diff as u64;
-            if pixel_diff > 48 {
-                changed_pixels += 1;
-            }
-        }
+        let (total_diff, changed_pixels) = pixel_diff_metrics(&cpu_buf, &gpu_buf);
 
         assert!(total_diff < 320_000, "total diff too high: {total_diff}");
         assert!(
             changed_pixels < 1_200,
+            "changed pixels too high: {changed_pixels}"
+        );
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn gpu_backend_submit_frame_should_render_vector_primitives() {
+        let frame = vector_frame();
+        let measurer = SkiaTextMeasurer::new();
+        let mut cpu = CpuSkiaBackend::new();
+        let mut cpu_buf = FrameBuffer::new(128, 128);
+
+        cpu.render_into(&frame, &mut cpu_buf, &measurer)
+            .expect("cpu render");
+        let gpu_buf = direct_gpu_render(&frame, 128, 128, &measurer);
+
+        let (total_diff, changed_pixels) = pixel_diff_metrics(&cpu_buf, &gpu_buf);
+        let non_background = count_non_background_pixels(&gpu_buf, frame.background);
+
+        assert!(
+            non_background > 1_000,
+            "expected GPU vector render to paint visible content, saw {non_background} non-background pixels"
+        );
+        assert!(total_diff < 1_500_000, "total diff too high: {total_diff}");
+        assert!(
+            changed_pixels < 5_000,
             "changed pixels too high: {changed_pixels}"
         );
     }

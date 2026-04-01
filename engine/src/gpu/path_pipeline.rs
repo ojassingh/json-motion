@@ -14,6 +14,13 @@ pub struct PathVertex {
     pub color: [f32; 4],
 }
 
+pub struct StrokeStyle {
+    pub color: [f32; 4],
+    pub join: lyon::tessellation::LineJoin,
+    pub line_cap: lyon::tessellation::LineCap,
+    pub width: f32,
+}
+
 struct VertexCtor {
     color: [f32; 4],
     offset: [f32; 2],
@@ -130,60 +137,20 @@ pub fn tessellate_icon(icon: &ResolvedIcon) -> (Vec<PathVertex>, Vec<u32>) {
     let cy = height / 2.0;
 
     let mut geometry: VertexBuffers<PathVertex, u32> = VertexBuffers::new();
-    let mut fill_tess = FillTessellator::new();
-    let mut stroke_tess = StrokeTessellator::new();
-
-    let stroke_opts = StrokeOptions::default()
-        .with_line_width(stroke_width)
-        .with_line_cap(to_lyon_cap(icon.line_cap))
-        .with_line_join(to_lyon_join(icon.line_join));
-
-    let stroke_color = {
-        let (r, g, b) = icon.stroke;
-        [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+    let stroke_style = StrokeStyle {
+        color: rgb_to_rgba(icon.stroke),
+        join: to_lyon_join(icon.line_join),
+        line_cap: to_lyon_cap(icon.line_cap),
+        width: stroke_width,
     };
     let fill_color = icon
         .fill
-        .map(|(r, g, b)| [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]);
+        .map(rgb_to_rgba);
 
     for element in &icon.elements {
         let svg_d = primitive_to_svg(element);
         let Some(ref d) = svg_d else { continue };
-
-        let mut builder = lyon::path::Path::builder();
-        let mut parser = lyon::extra::parser::PathParser::new();
-        let mut source = lyon::extra::parser::Source::new(d.chars());
-        let opts = ParserOptions::DEFAULT;
-        if parser.parse(&opts, &mut source, &mut builder).is_err() {
-            continue;
-        }
-        let lyon_path = builder.build();
-
-        if let Some(fc) = fill_color {
-            let _ = fill_tess.tessellate_path(
-                &lyon_path,
-                &FillOptions::default(),
-                &mut BuffersBuilder::new(
-                    &mut geometry,
-                    VertexCtor {
-                        color: fc,
-                        offset: [0.0, 0.0],
-                    },
-                ),
-            );
-        }
-
-        let _ = stroke_tess.tessellate_path(
-            &lyon_path,
-            &stroke_opts,
-            &mut BuffersBuilder::new(
-                &mut geometry,
-                VertexCtor {
-                    color: stroke_color,
-                    offset: [0.0, 0.0],
-                },
-            ),
-        );
+        tessellate_svg_path_into(&mut geometry, d, fill_color, Some(&stroke_style));
     }
 
     for vertex in &mut geometry.vertices {
@@ -194,9 +161,91 @@ pub fn tessellate_icon(icon: &ResolvedIcon) -> (Vec<PathVertex>, Vec<u32>) {
     (geometry.vertices, geometry.indices)
 }
 
+pub fn tessellate_svg_path(
+    d: &str,
+    fill_color: Option<[f32; 4]>,
+    stroke_style: Option<&StrokeStyle>,
+) -> (Vec<PathVertex>, Vec<u32>) {
+    let mut geometry: VertexBuffers<PathVertex, u32> = VertexBuffers::new();
+    tessellate_svg_path_into(&mut geometry, d, fill_color, stroke_style);
+    (geometry.vertices, geometry.indices)
+}
+
+fn tessellate_svg_path_into(
+    geometry: &mut VertexBuffers<PathVertex, u32>,
+    d: &str,
+    fill_color: Option<[f32; 4]>,
+    stroke_style: Option<&StrokeStyle>,
+) {
+    let Some(lyon_path) = parse_svg_path(d) else {
+        return;
+    };
+
+    if let Some(fill_color) = fill_color {
+        let mut fill_tess = FillTessellator::new();
+        let _ = fill_tess.tessellate_path(
+            &lyon_path,
+            &FillOptions::default(),
+            &mut BuffersBuilder::new(
+                geometry,
+                VertexCtor {
+                    color: fill_color,
+                    offset: [0.0, 0.0],
+                },
+            ),
+        );
+    }
+
+    if let Some(stroke_style) = stroke_style {
+        let mut stroke_tess = StrokeTessellator::new();
+        let stroke_opts = StrokeOptions::default()
+            .with_line_width(stroke_style.width)
+            .with_line_cap(stroke_style.line_cap)
+            .with_line_join(stroke_style.join);
+        let _ = stroke_tess.tessellate_path(
+            &lyon_path,
+            &stroke_opts,
+            &mut BuffersBuilder::new(
+                geometry,
+                VertexCtor {
+                    color: stroke_style.color,
+                    offset: [0.0, 0.0],
+                },
+            ),
+        );
+    }
+}
+
+fn parse_svg_path(d: &str) -> Option<lyon::path::Path> {
+    let mut builder = lyon::path::Path::builder();
+    let mut parser = lyon::extra::parser::PathParser::new();
+    let mut source = lyon::extra::parser::Source::new(d.chars());
+    let opts = ParserOptions::DEFAULT;
+    if parser.parse(&opts, &mut source, &mut builder).is_err() {
+        return None;
+    }
+    Some(builder.build())
+}
+
+fn rgb_to_rgba((r, g, b): (u8, u8, u8)) -> [f32; 4] {
+    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+}
+
 pub fn append_transformed_icon(
     node: &ResolvedNode,
     icon: &ResolvedIcon,
+    vertices: &[PathVertex],
+    indices: &[u32],
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    append_transformed_geometry(node, icon.width, icon.height, vertices, indices, out_vertices, out_indices);
+}
+
+pub fn append_transformed_geometry(
+    node: &ResolvedNode,
+    width: f64,
+    height: f64,
     vertices: &[PathVertex],
     indices: &[u32],
     out_vertices: &mut Vec<PathVertex>,
@@ -218,8 +267,8 @@ pub fn append_transformed_icon(
     let m01 = cos_a * sx * skew_x_tan - sin_a * sy;
     let m10 = sin_a * sx + cos_a * sy * skew_y_tan;
     let m11 = sin_a * sx * skew_x_tan + cos_a * sy;
-    let tx = node.x as f32 + icon.width as f32 / 2.0;
-    let ty = node.y as f32 + icon.height as f32 / 2.0;
+    let tx = node.x as f32 + width as f32 / 2.0;
+    let ty = node.y as f32 + height as f32 / 2.0;
     let opacity = node.opacity.clamp(0.0, 1.0) as f32;
     let base = out_vertices.len() as u32;
 
@@ -227,6 +276,7 @@ pub fn append_transformed_icon(
     out_indices.reserve(indices.len());
 
     for vertex in vertices {
+        let vertex_alpha = vertex.color[3];
         out_vertices.push(PathVertex {
             position: [
                 m00 * vertex.position[0] + m01 * vertex.position[1] + tx,
@@ -236,7 +286,7 @@ pub fn append_transformed_icon(
                 vertex.color[0] * opacity,
                 vertex.color[1] * opacity,
                 vertex.color[2] * opacity,
-                opacity,
+                vertex_alpha * opacity,
             ],
         });
     }

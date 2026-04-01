@@ -145,24 +145,6 @@ def _require_scene(payload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError("scene must be a JSON object.")
 
 
-def _scene_contains_node_type(scene: dict[str, Any], node_type: str) -> bool:
-    scenes = scene.get("scenes")
-    if not isinstance(scenes, list):
-        return False
-
-    for scene_entry in scenes:
-        if not isinstance(scene_entry, dict):
-            continue
-        nodes = scene_entry.get("nodes")
-        if not isinstance(nodes, dict):
-            continue
-        for node in nodes.values():
-            if isinstance(node, dict) and node.get("type") == node_type:
-                return True
-
-    return False
-
-
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload), encoding="utf8")
 
@@ -237,8 +219,6 @@ def render_video(payload: dict[str, Any]) -> dict[str, Any]:
     input_path = temp_dir / "input.json"
     output_path = temp_dir / "output.mp4"
     backend = os.environ.get("MODAL_RENDER_BACKEND", DEFAULT_BACKEND).strip() or DEFAULT_BACKEND
-    if backend == "gpu" and _scene_contains_node_type(scene, "arrow"):
-        backend = "cpu"
 
     try:
         _write_json(input_path, scene)
