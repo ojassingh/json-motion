@@ -159,4 +159,47 @@ describe("renderVideo", () => {
       width: 1280,
     });
   });
+
+  test("uses the Modal renderer when modal mode is configured", async () => {
+    process.env.MODAL_RENDER_ENDPOINT = "https://modal.example.com/render";
+    process.env.MODAL_RENDER_CODEC = "h264_nvenc";
+    process.env.VIDEO_RENDER_MODE = "modal";
+    createRemoteRenderOutputTargetMock.mockReturnValueOnce(remoteOutputTarget);
+    renderVideoWithModalMock.mockResolvedValueOnce({
+      codec: "h264_nvenc",
+      filePath: "renders/job-remote.mp4",
+      jobId: "job-remote",
+      publicUrl: "https://cdn.example.com/renders/job-remote.mp4",
+      timings: {
+        encodeMs: 245,
+        renderMs: 890,
+      },
+    });
+
+    const result = await renderVideo(sampleVideoDescription);
+
+    expect(createRemoteRenderOutputTargetMock).toHaveBeenCalledTimes(1);
+    expect(createRenderOutputTargetMock).not.toHaveBeenCalled();
+    expect(renderVideoWithRustMock).not.toHaveBeenCalled();
+    expect(renderVideoWithModalMock).toHaveBeenCalledWith({
+      codec: "h264_nvenc",
+      jobId: "job-remote",
+      objectKey: "renders/job-remote.mp4",
+      scene: sampleVideoDescription,
+    });
+    expect(result).toEqual({
+      codec: "h264_nvenc",
+      filePath: "renders/job-remote.mp4",
+      fps: 60,
+      frameCount: 240,
+      height: 720,
+      jobId: "job-remote",
+      publicUrl: "https://cdn.example.com/renders/job-remote.mp4",
+      timings: {
+        encodeMs: 245,
+        renderMs: 890,
+      },
+      width: 1280,
+    });
+  });
 });
