@@ -156,38 +156,18 @@ fn run_encode(
             }
         };
         if gpu_available {
-            if request.parallel_workers > 1 {
-                eprintln!(
-                    "backend=gpu (wgpu), parallel_workers={}",
-                    request.parallel_workers
-                );
-                return parallel_encode::parallel_encode_wgpu(
-                    desc,
-                    compiled,
-                    parallel_encode::ParallelEncodeRequest {
-                        codec: request.codec,
-                        output_path: request.output_path,
-                        frame_count: request.total_frames,
-                        num_workers: request.parallel_workers,
-                    },
-                );
-            }
-            let mut backend = gpu::WgpuBackend::new(desc.width, desc.height)
-                .map_err(|error| format!("failed to initialize GPU backend: {error}"))?;
-            eprintln!("backend=gpu (wgpu)");
-            return encode::encode_wgpu(
-                encode::WgpuEncodeRequest {
-                    backend: &mut backend,
+            eprintln!(
+                "backend=gpu (wgpu), parallel_workers={}",
+                request.parallel_workers
+            );
+            return parallel_encode::parallel_encode_wgpu(
+                desc,
+                compiled,
+                parallel_encode::ParallelEncodeRequest {
                     codec: request.codec,
-                    fps: desc.fps,
-                    frame_count: request.total_frames,
-                    height: desc.height,
-                    measurer: measurer as &dyn TextMeasurer,
                     output_path: request.output_path,
-                    width: desc.width,
-                },
-                |frame_index| {
-                    animation::resolve_frame_fast(compiled, frame_index as u32, measurer)
+                    frame_count: request.total_frames,
+                    num_workers: request.parallel_workers,
                 },
             );
         }
