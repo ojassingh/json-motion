@@ -574,3 +574,10 @@
 - Kept the Next.js integration lean by teaching `lib/video/render-video.ts` to choose between the existing local Rust path and the new Modal path based on env, while preserving the `publicUrl` contract used by the UI.
 - Added a small server-only `lib/video/modal-render.ts` helper plus remote object-key helpers in `lib/video/storage.ts` so the orchestration logic stays narrow and the frontend did not need to change.
 - Added focused provider-switch coverage in `lib/video/render-video.test.ts` and kept the existing `/api/render` route contract unchanged.
+
+### Verification
+
+- `bun test app/api/render/route.test.ts lib/video/render-video.test.ts`
+- `bun run typecheck`
+- `bunx ultracite check lib/video/config.ts lib/video/storage.ts lib/video/modal-render.ts lib/video/render-video.ts lib/video/render-video.test.ts app/api/render/route.ts app/api/render/route.test.ts`
+- `python3 -m py_compile scripts/modal_render_api.py`
