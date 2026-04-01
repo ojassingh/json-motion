@@ -7,4 +7,4 @@
 ## 2. Verification
 
 - [x] 2.1 Add a test scene to `engine/src/pipeline_review_tests.rs` (or benchmark) with a rect node that has a `drawProgress` timeline event animating from 0 to 1 - confirm the resolved value at mid-duration is ~0.75 with ease-out
-- [ ] 2.2 Run the existing benchmark suite (`bun run scripts/benchmark-engine.ts`) and confirm no pixel-diff regressions on existing test cases
+- [x] 2.2 Run the existing benchmark suite (`bun run scripts/benchmark-engine.ts`) and confirm no pixel-diff regressions on existing test cases
