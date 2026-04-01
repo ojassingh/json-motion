@@ -139,6 +139,15 @@ export const videoTextNodeSchema = videoNodeBaseSchema
   })
   .strict();
 
+export const videoAiEquationNodeSchema = videoNodeBaseSchema
+  .extend({
+    color: videoHexColorSchema.optional(),
+    latex: z.string().trim().min(1),
+    size: pos.optional(),
+    type: z.literal("equation"),
+  })
+  .strict();
+
 const videoIconPointSchema = z.tuple([fin, fin]);
 
 export const videoIconPathPrimitiveSchema = z
@@ -309,6 +318,7 @@ export const videoAiNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
   videoArrowNodeSchema,
   videoCenterNodeSchema,
+  videoAiEquationNodeSchema,
   videoAiIconNodeSchema,
   videoRectNodeSchema,
   videoRepeatNodeSchema,

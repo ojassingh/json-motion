@@ -87,6 +87,44 @@ describe("lucide video icons", () => {
     expect(icon.elements[0]).toHaveProperty("type", "path");
   });
 
+  test("resolveAiSceneNodes converts equation nodes into icon nodes", async () => {
+    const resolved = await resolveAiSceneNodes({
+      equation: {
+        color: "#38bdf8",
+        latex: "x^2 + y^2 = z^2",
+        size: 56,
+        type: "equation",
+      },
+    });
+
+    expect(videoNodeSchema.parse(resolved.equation)).toEqual(resolved.equation);
+
+    const equation = resolved.equation;
+    if (equation.type !== "icon") {
+      throw new Error("expected icon type");
+    }
+
+    expect(equation.fill).toBe("#38bdf8");
+    expect(equation.strokeWidth).toBe(0);
+    expect(equation.elements.length).toBeGreaterThan(0);
+    expect(equation.elements.some((element) => element.type === "path")).toBe(
+      true
+    );
+    expect(equation.width).toBeGreaterThan(0);
+    expect(equation.height).toBeGreaterThan(0);
+  });
+
+  test("resolveAiSceneNodes throws for malformed equation latex", async () => {
+    await expect(
+      resolveAiSceneNodes({
+        equation: {
+          latex: "\\frac{",
+          type: "equation",
+        },
+      })
+    ).rejects.toThrow();
+  });
+
   test("resolveAiSceneNodes converts display latex text nodes into icon nodes", async () => {
     const resolved = await resolveAiSceneNodes({
       equation: {

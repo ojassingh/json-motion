@@ -5,6 +5,7 @@ import {
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
 import {
+  videoAiEquationNodeSchema,
   videoAiIconNodeSchema,
   videoAlignNodeSchema,
   videoAnchorSchema,
@@ -44,6 +45,11 @@ export const videoCatalog = defineCatalog({
         "Centers exactly one child inside the frame or parent layout box.",
       propSchema: videoCenterNodeSchema,
     },
+    equation: {
+      description:
+        "Renders a LaTeX mathematical expression. Use for equations, formulas, and mathematical notation. `latex` is the expression without surrounding `$$` delimiters. `size` controls the font size in pixels.",
+      propSchema: videoAiEquationNodeSchema,
+    },
     icon: {
       description:
         "Renders a Lucide icon by name (see lucide.dev/icons). Use for symbolic visual accents. Specify `stroke` to colour the icon lines; omit `fill` unless you want a solid fill instead of an outline icon.",
@@ -66,7 +72,7 @@ export const videoCatalog = defineCatalog({
     },
     text: {
       description:
-        "Renders a text string. Supports multiline with \\n. Wrap display math in $$...$$ to render it as LaTeX. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
+        "Renders a text string. Supports multiline with \\n. Do not use `$$...$$` delimiters — use the `equation` node type for math. Defaults: color = #f8fafc, size = 48px, fontFamily = Inter, textAlign = left.",
       propSchema: videoTextNodeSchema,
     },
   },
