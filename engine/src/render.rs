@@ -1,12 +1,12 @@
 use skia_safe::{
-    paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Matrix, Paint, RRect, Rect,
-    Surface, TextBlob,
+    paint, surfaces, AlphaType, Color, ColorType, Font, ImageInfo, Matrix, Paint, Path, RRect,
+    Rect, Surface, TextBlob,
 };
 
 use crate::icon;
 use crate::schema::TextAlign;
 use crate::shared::types::{
-    ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+    ResolvedArrow, ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
 };
 use crate::text::{self, TextMeasurer};
 
@@ -92,6 +92,7 @@ impl RenderBackend for CpuSkiaBackend {
 
         for node in &frame.nodes {
             match &node.data {
+                ResolvedNodeData::Arrow(arrow) => draw_arrow(canvas, node, arrow),
                 ResolvedNodeData::Icon(icon) => icon::draw_icon(canvas, node, icon),
                 ResolvedNodeData::Rect(rect) => draw_rect(canvas, node, rect),
                 ResolvedNodeData::Text(text) => draw_text(canvas, node, text, measurer),
@@ -151,6 +152,46 @@ fn draw_rect(canvas: &skia_safe::Canvas, node: &ResolvedNode, rect: &ResolvedRec
             let mut paint = make_paint(alpha, stroke, paint::Style::Stroke);
             paint.set_stroke_width(rect.stroke_width as f32);
             canvas.draw_rrect(shape, &paint);
+        }
+    }
+
+    canvas.restore();
+}
+
+fn draw_arrow(canvas: &skia_safe::Canvas, node: &ResolvedNode, arrow: &ResolvedArrow) {
+    let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
+    let dx = arrow.end.0 - arrow.start.0;
+    let dy = arrow.end.1 - arrow.start.1;
+    let length = (dx * dx + dy * dy).sqrt();
+
+    canvas.save();
+    apply_node_transform(canvas, node, arrow.width as f32, arrow.height as f32);
+
+    if arrow.stroke_width > 0.0 {
+        let mut line_paint = make_paint(alpha, arrow.stroke, paint::Style::Stroke);
+        line_paint.set_stroke_width(arrow.stroke_width as f32);
+        canvas.draw_line(
+            (arrow.start.0 as f32, arrow.start.1 as f32),
+            (arrow.end.0 as f32, arrow.end.1 as f32),
+            &line_paint,
+        );
+
+        if length > f64::EPSILON {
+            let ux = dx / length;
+            let uy = dy / length;
+            let nx = -uy;
+            let ny = ux;
+            let back_x = arrow.end.0 - ux * arrow.head_size;
+            let back_y = arrow.end.1 - uy * arrow.head_size;
+            let wing = arrow.head_size * 0.45;
+            let left = (back_x + nx * wing, back_y + ny * wing);
+            let right = (back_x - nx * wing, back_y - ny * wing);
+            if let Some(head) = Path::from_svg(&format!(
+                "M{} {} L{} {} L{} {} Z",
+                arrow.end.0, arrow.end.1, left.0, left.1, right.0, right.1
+            )) {
+                canvas.draw_path(&head, &make_paint(alpha, arrow.stroke, paint::Style::Fill));
+            }
         }
     }
 

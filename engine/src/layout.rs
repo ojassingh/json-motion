@@ -5,6 +5,14 @@ use taffy::prelude::*;
 use crate::schema::{Anchor, Node, StackAlign, StackDirection};
 use crate::text::TextMeasurer;
 
+#[derive(Clone, Copy, Debug)]
+pub struct LayoutBox {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 fn roots(nodes: &indexmap::IndexMap<String, Node>) -> Vec<String> {
     let mut child_ids = HashSet::new();
     for node in nodes.values() {
@@ -82,6 +90,9 @@ fn style_for_node(node: &Node, is_root: bool, measurer: &impl TextMeasurer) -> S
     match node {
         Node::Rect(node) => {
             style.size = fixed_size(node.width, node.height);
+        }
+        Node::Arrow(_) => {
+            style.size = fixed_size(0.0, 0.0);
         }
         Node::Icon(node) => {
             style.size = fixed_size(node.width, node.height);
@@ -169,7 +180,7 @@ fn collect_positions(
     nodes: &indexmap::IndexMap<String, Node>,
     tree: &TaffyTree<()>,
     built: &HashMap<String, NodeId>,
-    positions: &mut HashMap<String, (f64, f64)>,
+    positions: &mut HashMap<String, LayoutBox>,
 ) -> Result<(), String> {
     let node = nodes
         .get(id)
@@ -184,7 +195,15 @@ fn collect_positions(
         parent_pos.0 + layout.location.x as f64 + node.base().x.unwrap_or(0.0),
         parent_pos.1 + layout.location.y as f64 + node.base().y.unwrap_or(0.0),
     );
-    positions.insert(id.to_string(), pos);
+    positions.insert(
+        id.to_string(),
+        LayoutBox {
+            x: pos.0,
+            y: pos.1,
+            width: layout.size.width as f64,
+            height: layout.size.height as f64,
+        },
+    );
 
     for child_id in node.children() {
         collect_positions(child_id, pos, nodes, tree, built, positions)?;
@@ -197,7 +216,7 @@ pub fn resolve_layout(
     frame_w: f64,
     frame_h: f64,
     measurer: &impl TextMeasurer,
-) -> Result<HashMap<String, (f64, f64)>, String> {
+) -> Result<HashMap<String, LayoutBox>, String> {
     let mut positions = HashMap::new();
     let root_ids = roots(nodes);
     if !nodes.is_empty() && root_ids.is_empty() {

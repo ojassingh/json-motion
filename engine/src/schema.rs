@@ -26,6 +26,18 @@ pub enum Anchor {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
+pub enum ArrowPosition {
+    #[serde(rename = "above")]
+    Above,
+    #[serde(rename = "below")]
+    Below,
+    #[serde(rename = "left")]
+    Left,
+    #[serde(rename = "right")]
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub enum Easing {
     #[serde(rename = "linear")]
     Linear,
@@ -165,6 +177,8 @@ pub struct NodeBase {
 pub enum Node {
     #[serde(rename = "align")]
     Align(AlignNode),
+    #[serde(rename = "arrow")]
+    Arrow(ArrowNode),
     #[serde(rename = "center")]
     Center(CenterNode),
     #[serde(rename = "icon")]
@@ -181,6 +195,7 @@ impl Node {
     pub fn base(&self) -> &NodeBase {
         match self {
             Self::Align(n) => &n.base,
+            Self::Arrow(n) => &n.base,
             Self::Center(n) => &n.base,
             Self::Icon(n) => &n.base,
             Self::Rect(n) => &n.base,
@@ -201,6 +216,42 @@ impl Node {
     pub fn is_layout(&self) -> bool {
         matches!(self, Self::Align(_) | Self::Center(_) | Self::Stack(_))
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrowNode {
+    #[serde(flatten)]
+    pub base: NodeBase,
+    pub from: Option<ArrowEndpoint>,
+    pub to: Option<ArrowEndpoint>,
+    pub target: Option<String>,
+    pub position: Option<ArrowPosition>,
+    pub gap: Option<f64>,
+    pub length: Option<f64>,
+    pub stroke: Option<String>,
+    pub stroke_width: Option<f64>,
+    pub head_size: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum ArrowEndpoint {
+    Point(ArrowPoint),
+    NodeRef(ArrowEndpointTarget),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ArrowPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrowEndpointTarget {
+    pub node: String,
+    pub anchor: Option<Anchor>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
