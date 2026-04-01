@@ -1,8 +1,11 @@
 use indexmap::IndexMap;
 
 use crate::animation::{compile_video, frame_render_hint, resolve_frame_fast, total_frame_count};
-use crate::schema::{AlignNode, Anchor, Node, NodeBase, RectNode, SceneEntry, VideoDescription};
-use crate::shared::types::ResolvedNodeBatchKind;
+use crate::schema::{
+    AlignNode, Anchor, ArrowNode, ArrowPosition, Node, NodeBase, RectNode, SceneEntry,
+    VideoDescription,
+};
+use crate::shared::types::{ResolvedNodeBatchKind, ResolvedNodeData};
 use crate::text::SkiaTextMeasurer;
 
 fn video_with_scene(scene: SceneEntry) -> VideoDescription {
@@ -371,4 +374,101 @@ fn frame_render_hint_should_disable_reuse_for_animated_scenes() {
     let hint = frame_render_hint(&compiled, 0);
 
     assert!(!hint.can_reuse_rendered_frame);
+}
+
+#[test]
+fn resolve_frame_fast_should_track_arrow_targets_against_motion() {
+    let mut nodes = IndexMap::new();
+    nodes.insert(
+        "box".to_string(),
+        Node::Rect(RectNode {
+            base: NodeBase {
+                x: Some(120.0),
+                y: Some(80.0),
+                ..NodeBase::default()
+            },
+            width: 40.0,
+            height: 40.0,
+            fill: Some("#38bdf8".to_string()),
+            stroke: None,
+            stroke_width: None,
+            corner_radius: None,
+        }),
+    );
+    nodes.insert(
+        "arrow".to_string(),
+        Node::Arrow(ArrowNode {
+            base: NodeBase::default(),
+            from: None,
+            to: None,
+            target: Some("box".to_string()),
+            position: Some(ArrowPosition::Above),
+            gap: Some(8.0),
+            length: Some(24.0),
+            stroke: Some("#f8fafc".to_string()),
+            stroke_width: Some(4.0),
+            head_size: Some(10.0),
+        }),
+    );
+
+    let scene = SceneEntry {
+        id: "scene-1".to_string(),
+        background: None,
+        duration: 60,
+        start_frame: 0,
+        nodes,
+        timeline: vec![crate::schema::TimelineEvent {
+            target: crate::schema::EventTarget::Single("box".to_string()),
+            at: 0.0,
+            dur: Some(0.5),
+            ease: None,
+            action: None,
+            opacity: None,
+            x: None,
+            y: None,
+            dx: Some(20.0),
+            dy: None,
+            width: None,
+            height: None,
+            rotate: None,
+            scale: None,
+            scale_x: None,
+            scale_y: None,
+            skew_x: None,
+            skew_y: None,
+            corner_radius: None,
+            stroke_width: None,
+            size: None,
+            draw_progress: None,
+            fill: None,
+            stroke: None,
+            color: None,
+        }],
+    };
+    let desc = video_with_scene(scene);
+    let measurer = SkiaTextMeasurer::new();
+    let compiled = compile_video(&desc, &measurer).expect("video should compile");
+    let start_frame = resolve_frame_fast(&compiled, 0, &measurer).expect("start frame should resolve");
+    let moved_frame = resolve_frame_fast(&compiled, 15, &measurer).expect("moved frame should resolve");
+
+    let start_arrow = start_frame
+        .nodes
+        .iter()
+        .find_map(|node| match &node.data {
+            ResolvedNodeData::Arrow(arrow) => Some((node, arrow)),
+            _ => None,
+        })
+        .expect("expected arrow in start frame");
+    let moved_arrow = moved_frame
+        .nodes
+        .iter()
+        .find_map(|node| match &node.data {
+            ResolvedNodeData::Arrow(arrow) => Some((node, arrow)),
+            _ => None,
+        })
+        .expect("expected arrow in moved frame");
+
+    assert_eq!(start_arrow.0.x, 140.0);
+    assert_eq!(moved_arrow.0.x, 160.0);
+    assert_eq!(start_arrow.1.end.1, moved_arrow.1.end.1);
 }

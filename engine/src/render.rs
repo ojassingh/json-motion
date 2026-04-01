@@ -257,7 +257,8 @@ mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
     use crate::shared::types::{
-        ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+        ResolvedArrow, ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind,
+        ResolvedNodeData,
     };
     use crate::text::SkiaTextMeasurer;
     use crate::text::TextMeasurer;
@@ -315,6 +316,51 @@ mod tests {
                 .chunks_exact(4)
                 .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
             "expected icon rendering to change at least one pixel"
+        );
+    }
+
+    #[test]
+    fn arrow_rendering_should_paint_non_background_pixels() {
+        let frame = ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![ResolvedNode {
+                batch_kind: ResolvedNodeBatchKind::Dynamic,
+                data: ResolvedNodeData::Arrow(ResolvedArrow {
+                    width: 48.0,
+                    height: 24.0,
+                    start: (0.0, 12.0),
+                    end: (48.0, 12.0),
+                    stroke: (0, 0, 0),
+                    stroke_width: 3.0,
+                    head_size: 10.0,
+                }),
+                x: 0.0,
+                y: 12.0,
+                opacity: 1.0,
+                rotation: 0.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                skew_x: 0.0,
+                skew_y: 0.0,
+                z_index: 0,
+                source_index: 0,
+            }],
+            scene_cache_key: 0,
+        };
+        let measurer = SkiaTextMeasurer::new();
+        let mut backend = CpuSkiaBackend::new();
+        let mut buffer = FrameBuffer::new(64, 64);
+
+        backend
+            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
+            .expect("arrow frame should render");
+
+        assert!(
+            buffer
+                .pixels()
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
+            "expected arrow rendering to change at least one pixel"
         );
     }
 }
