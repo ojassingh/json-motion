@@ -29,4 +29,4 @@
 
 ## 6. Smoke Test
 
-- [ ] 6.1 Run a prompt-to-video smoke test with "show me the quadratic formula" and verify the output scene contains an icon node (resolved from equation) with SVG path elements — not a raw text node
+- [x] 6.1 Run a prompt-to-video smoke test with "show me the quadratic formula" and verify the output scene contains an icon node (resolved from equation) with SVG path elements — not a raw text node
