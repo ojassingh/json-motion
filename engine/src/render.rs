@@ -4,9 +4,10 @@ use skia_safe::{
 };
 
 use crate::icon;
-use crate::schema::TextAlign;
+use crate::schema::{LineCap, TextAlign};
 use crate::shared::types::{
-    ResolvedArrow, ResolvedFrame, ResolvedNode, ResolvedNodeData, ResolvedRect, ResolvedText,
+    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedLine, ResolvedNode, ResolvedNodeData,
+    ResolvedRect, ResolvedText,
 };
 use crate::text::{self, TextMeasurer};
 
@@ -93,7 +94,9 @@ impl RenderBackend for CpuSkiaBackend {
         for node in &frame.nodes {
             match &node.data {
                 ResolvedNodeData::Arrow(arrow) => draw_arrow(canvas, node, arrow),
+                ResolvedNodeData::Circle(circle) => draw_circle(canvas, node, circle),
                 ResolvedNodeData::Icon(icon) => icon::draw_icon(canvas, node, icon),
+                ResolvedNodeData::Line(line) => draw_line(canvas, node, line),
                 ResolvedNodeData::Rect(rect) => draw_rect(canvas, node, rect),
                 ResolvedNodeData::Text(text) => draw_text(canvas, node, text, measurer),
             }
@@ -198,6 +201,76 @@ fn draw_arrow(canvas: &skia_safe::Canvas, node: &ResolvedNode, arrow: &ResolvedA
     canvas.restore();
 }
 
+fn draw_circle(canvas: &skia_safe::Canvas, node: &ResolvedNode, circle: &ResolvedCircle) {
+    let diameter = (circle.radius * 2.0) as f32;
+    let shape = Rect::from_xywh(0.0, 0.0, diameter, diameter);
+    let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
+
+    canvas.save();
+    apply_node_transform(canvas, node, diameter, diameter);
+
+    if let Some(fill) = circle.fill {
+        canvas.draw_oval(shape, &make_paint(alpha, fill, paint::Style::Fill));
+    }
+
+    if let Some(stroke) = circle.stroke {
+        if circle.stroke_width > 0.0 {
+            let mut paint = make_paint(alpha, stroke, paint::Style::Stroke);
+            paint.set_stroke_width(circle.stroke_width as f32);
+            if circle.draw_progress < 1.0 {
+                canvas.draw_arc(
+                    shape,
+                    270.0,
+                    (360.0 * circle.draw_progress) as f32,
+                    false,
+                    &paint,
+                );
+            } else {
+                canvas.draw_oval(shape, &paint);
+            }
+        }
+    }
+
+    canvas.restore();
+}
+
+fn draw_line(canvas: &skia_safe::Canvas, node: &ResolvedNode, line: &ResolvedLine) {
+    let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
+    let dx = line.x2 - line.x1;
+    let dy = line.y2 - line.y1;
+    let progress = line.draw_progress.clamp(0.0, 1.0);
+    let end = (line.x1 + dx * progress, line.y1 + dy * progress);
+
+    canvas.save();
+    apply_node_transform(
+        canvas,
+        node,
+        (line.x2 - line.x1).abs() as f32,
+        (line.y2 - line.y1).abs() as f32,
+    );
+
+    if line.stroke_width > 0.0 {
+        let mut paint = make_paint(alpha, line.stroke, paint::Style::Stroke);
+        paint.set_stroke_width(line.stroke_width as f32);
+        paint.set_stroke_cap(line_cap(line.cap));
+        canvas.draw_line(
+            (line.x1 as f32, line.y1 as f32),
+            (end.0 as f32, end.1 as f32),
+            &paint,
+        );
+    }
+
+    canvas.restore();
+}
+
+fn line_cap(cap: LineCap) -> paint::Cap {
+    match cap {
+        LineCap::Round => paint::Cap::Round,
+        LineCap::Square => paint::Cap::Square,
+        LineCap::Butt => paint::Cap::Butt,
+    }
+}
+
 fn draw_text(
     canvas: &skia_safe::Canvas,
     node: &ResolvedNode,
@@ -255,10 +328,10 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
+    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap};
     use crate::shared::types::{
-        ResolvedArrow, ResolvedFrame, ResolvedIcon, ResolvedNode, ResolvedNodeBatchKind,
-        ResolvedNodeData,
+        ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedIcon, ResolvedLine, ResolvedNode,
+        ResolvedNodeBatchKind, ResolvedNodeData,
     };
     use crate::text::SkiaTextMeasurer;
     use crate::text::TextMeasurer;
@@ -361,6 +434,95 @@ mod tests {
                 .chunks_exact(4)
                 .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
             "expected arrow rendering to change at least one pixel"
+        );
+    }
+
+    #[test]
+    fn circle_rendering_should_paint_non_background_pixels() {
+        let frame = ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![ResolvedNode {
+                batch_kind: ResolvedNodeBatchKind::Dynamic,
+                data: ResolvedNodeData::Circle(ResolvedCircle {
+                    radius: 20.0,
+                    fill: Some((56, 189, 248)),
+                    stroke: Some((15, 23, 42)),
+                    stroke_width: 3.0,
+                    draw_progress: 1.0,
+                }),
+                x: 8.0,
+                y: 8.0,
+                opacity: 1.0,
+                rotation: 0.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                skew_x: 0.0,
+                skew_y: 0.0,
+                z_index: 0,
+                source_index: 0,
+            }],
+            scene_cache_key: 0,
+        };
+        let measurer = SkiaTextMeasurer::new();
+        let mut backend = CpuSkiaBackend::new();
+        let mut buffer = FrameBuffer::new(64, 64);
+
+        backend
+            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
+            .expect("circle frame should render");
+
+        assert!(
+            buffer
+                .pixels()
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
+            "expected circle rendering to change at least one pixel"
+        );
+    }
+
+    #[test]
+    fn line_rendering_should_paint_non_background_pixels() {
+        let frame = ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![ResolvedNode {
+                batch_kind: ResolvedNodeBatchKind::Dynamic,
+                data: ResolvedNodeData::Line(ResolvedLine {
+                    x1: 0.0,
+                    y1: 0.0,
+                    x2: 48.0,
+                    y2: 0.0,
+                    stroke: (0, 0, 0),
+                    stroke_width: 4.0,
+                    cap: LineCap::Round,
+                    draw_progress: 1.0,
+                }),
+                x: 8.0,
+                y: 24.0,
+                opacity: 1.0,
+                rotation: 0.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                skew_x: 0.0,
+                skew_y: 0.0,
+                z_index: 0,
+                source_index: 0,
+            }],
+            scene_cache_key: 0,
+        };
+        let measurer = SkiaTextMeasurer::new();
+        let mut backend = CpuSkiaBackend::new();
+        let mut buffer = FrameBuffer::new(64, 64);
+
+        backend
+            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
+            .expect("line frame should render");
+
+        assert!(
+            buffer
+                .pixels()
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
+            "expected line rendering to change at least one pixel"
         );
     }
 }

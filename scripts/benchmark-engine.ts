@@ -69,6 +69,11 @@ const CASES: BenchmarkCase[] = [
     threshold: { maxAvgChannelDiff: 12, maxChangedPixelRatio: 0.2 },
   },
   {
+    name: "circle-line-primitives",
+    description: createCircleLinePrimitives(),
+    threshold: { maxAvgChannelDiff: 12, maxChangedPixelRatio: 0.2 },
+  },
+  {
     name: "math-complex",
     description: createMathComplex(),
     threshold: { maxAvgChannelDiff: 14, maxChangedPixelRatio: 0.24 },
@@ -205,6 +210,55 @@ function createIconGrid() {
       id += 1;
     }
   }
+
+  desc.scenes.push({
+    duration: 120,
+    id: "scene1",
+    nodes,
+    startFrame: 0,
+    timeline: [],
+  });
+
+  return desc;
+}
+
+function createCircleLinePrimitives() {
+  const desc = createBaseDescription();
+  const nodes: Record<string, unknown> = {
+    connector: {
+      cap: "round",
+      drawProgress: 1,
+      stroke: "#f8fafc",
+      strokeWidth: 8,
+      type: "line",
+      x1: 0,
+      x2: 220,
+      y1: 0,
+      y2: 0,
+      x: 280,
+      y: 360,
+    },
+    neuronLeft: {
+      drawProgress: 1,
+      fill: "#38bdf8",
+      radius: 48,
+      stroke: "#f8fafc",
+      strokeWidth: 6,
+      type: "circle",
+      x: 220,
+      y: 312,
+    },
+    neuronRight: {
+      drawProgress: 1,
+      fill: "#0f172a",
+      radius: 48,
+      stroke: "#38bdf8",
+      strokeWidth: 6,
+      type: "circle",
+      x: 452,
+      y: 312,
+    },
+  };
 
   desc.scenes.push({
     duration: 120,
@@ -407,7 +461,8 @@ function runCase(
   if (options?.codec) {
     args.push(options.codec);
   }
-  args.push(`--backend=${backend}`);
+  const engineBackend = backend === "gpu" ? "auto" : backend;
+  args.push(`--backend=${engineBackend}`);
   const parallelWorkers = options?.parallelWorkers ?? 1;
   if (parallelWorkers > 1) {
     args.push(`--parallel-workers=${parallelWorkers}`);
@@ -502,6 +557,21 @@ function extractFirstFrame(videoPath: string): Buffer {
   return result.stdout as unknown as Buffer;
 }
 
+function assertFrameHasContent(frame: Buffer, label: string) {
+  if (frame.length < 4) {
+    throw new Error(`${label} first frame was empty.`);
+  }
+
+  const background = frame.subarray(0, 4);
+  const hasVisibleContent = frame
+    .subarray(4)
+    .some((value, index) => value !== background[index % 4]);
+
+  if (!hasVisibleContent) {
+    throw new Error(`${label} first frame matched the background exactly.`);
+  }
+}
+
 function computePixelDiff(
   cpuFrame: Buffer,
   gpuFrame: Buffer
@@ -543,6 +613,8 @@ function verifyPixelDiff(testCase: BenchmarkCase) {
 
   const cpuFrame = extractFirstFrame(cpuRun.outputPath);
   const gpuFrame = extractFirstFrame(gpuRun.outputPath);
+  assertFrameHasContent(cpuFrame, `${testCase.name} cpu`);
+  assertFrameHasContent(gpuFrame, `${testCase.name} gpu`);
   const diff = computePixelDiff(cpuFrame, gpuFrame);
 
   rmSync(cpuRun.tempDir, { force: true, recursive: true });

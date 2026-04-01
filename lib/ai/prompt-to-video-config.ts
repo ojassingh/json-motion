@@ -11,7 +11,9 @@ import {
   videoAnchorSchema,
   videoArrowNodeSchema,
   videoCenterNodeSchema,
+  videoCircleNodeSchema,
   videoEasingSchema,
+  videoLineNodeSchema,
   videoRectNodeSchema,
   videoRepeatNodeSchema,
   videoStackNodeSchema,
@@ -40,6 +42,11 @@ export const videoCatalog = defineCatalog({
         "Draws a straight arrow. Prefer `target` + `position` for callouts that should follow another node; use `from` + `to` for manual connectors or repeated arrows.",
       propSchema: videoArrowNodeSchema,
     },
+    circle: {
+      description:
+        "Renders a circle or ellipse. Use for neurons, atoms, Venn diagram regions, orbits, or any round shape. Animate `drawProgress` from 0 to 1 to draw the circle stroke progressively.",
+      propSchema: videoCircleNodeSchema,
+    },
     center: {
       description:
         "Centers exactly one child inside the frame or parent layout box.",
@@ -55,6 +62,11 @@ export const videoCatalog = defineCatalog({
         "Renders a Lucide icon by name (see lucide.dev/icons). Use for symbolic visual accents. Specify `stroke` to colour the icon lines; omit `fill` unless you want a solid fill instead of an outline icon.",
       propSchema: videoAiIconNodeSchema,
     },
+    line: {
+      description:
+        "Renders a straight line segment. Use for vectors, number lines, axes, or geometric constructions. Prefer `arrow` for labeled connectors. Animate `drawProgress` to grow the line from start to end.",
+      propSchema: videoLineNodeSchema,
+    },
     rect: {
       description:
         "Rectangle shape with optional fill, stroke, and corner radius.",
@@ -62,7 +74,7 @@ export const videoCatalog = defineCatalog({
     },
     repeat: {
       description:
-        "Macro that repeats one leaf template in a 2D lattice. Use `rows`, `cols`, `rowStep`, and `colStep`. Omitted axes default to 0, so `{ y: 48 }` is valid. Best for grids, diagonal patterns, and repeated arrows. `template` should be a single `rect`, `text`, `icon`, or absolute `arrow`. Do not reference a `repeat` node from layout `children`; place it directly with `origin`.",
+        "Macro that repeats one leaf template in a 2D lattice. Use `rows`, `cols`, `rowStep`, and `colStep`. Omitted axes default to 0, so `{ y: 48 }` is valid. Best for grids, diagonal patterns, repeated arrows, and repeated geometry like circles or lines. `template` should be a single `rect`, `text`, `icon`, `circle`, `line`, or absolute `arrow`. Do not reference a `repeat` node from layout `children`; place it directly with `origin`.",
       propSchema: videoRepeatNodeSchema,
     },
     stack: {

@@ -201,6 +201,11 @@ fn compile_video_should_cache_layout_when_only_non_layout_props_animate() {
             dy: None,
             width: None,
             height: None,
+            radius: None,
+            x1: None,
+            y1: None,
+            x2: None,
+            y2: None,
             rotate: Some(45.0),
             scale: None,
             scale_x: None,
@@ -278,6 +283,11 @@ fn resolve_frame_fast_should_mark_only_animated_absolute_nodes_as_dynamic() {
             dy: None,
             width: None,
             height: None,
+            radius: None,
+            x1: None,
+            y1: None,
+            x2: None,
+            y2: None,
             rotate: None,
             scale: None,
             scale_x: None,
@@ -353,6 +363,11 @@ fn frame_render_hint_should_disable_reuse_for_animated_scenes() {
             dy: None,
             width: None,
             height: None,
+            radius: None,
+            x1: None,
+            y1: None,
+            x2: None,
+            y2: None,
             rotate: None,
             scale: None,
             scale_x: None,
@@ -430,6 +445,11 @@ fn resolve_frame_fast_should_track_arrow_targets_against_motion() {
             dy: None,
             width: None,
             height: None,
+            radius: None,
+            x1: None,
+            y1: None,
+            x2: None,
+            y2: None,
             rotate: None,
             scale: None,
             scale_x: None,
@@ -448,8 +468,10 @@ fn resolve_frame_fast_should_track_arrow_targets_against_motion() {
     let desc = video_with_scene(scene);
     let measurer = SkiaTextMeasurer::new();
     let compiled = compile_video(&desc, &measurer).expect("video should compile");
-    let start_frame = resolve_frame_fast(&compiled, 0, &measurer).expect("start frame should resolve");
-    let moved_frame = resolve_frame_fast(&compiled, 15, &measurer).expect("moved frame should resolve");
+    let start_frame =
+        resolve_frame_fast(&compiled, 0, &measurer).expect("start frame should resolve");
+    let moved_frame =
+        resolve_frame_fast(&compiled, 15, &measurer).expect("moved frame should resolve");
 
     let start_arrow = start_frame
         .nodes

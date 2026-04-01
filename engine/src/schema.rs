@@ -91,6 +91,14 @@ pub enum IconLineCap {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LineCap {
+    Round,
+    Square,
+    Butt,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum IconLineJoin {
     Bevel,
@@ -179,10 +187,14 @@ pub enum Node {
     Align(AlignNode),
     #[serde(rename = "arrow")]
     Arrow(ArrowNode),
+    #[serde(rename = "circle")]
+    Circle(CircleNode),
     #[serde(rename = "center")]
     Center(CenterNode),
     #[serde(rename = "icon")]
     Icon(IconNode),
+    #[serde(rename = "line")]
+    Line(LineNode),
     #[serde(rename = "rect")]
     Rect(RectNode),
     #[serde(rename = "stack")]
@@ -196,8 +208,10 @@ impl Node {
         match self {
             Self::Align(n) => &n.base,
             Self::Arrow(n) => &n.base,
+            Self::Circle(n) => &n.base,
             Self::Center(n) => &n.base,
             Self::Icon(n) => &n.base,
+            Self::Line(n) => &n.base,
             Self::Rect(n) => &n.base,
             Self::Stack(n) => &n.base,
             Self::Text(n) => &n.base,
@@ -232,6 +246,18 @@ pub struct ArrowNode {
     pub stroke: Option<String>,
     pub stroke_width: Option<f64>,
     pub head_size: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CircleNode {
+    #[serde(flatten)]
+    pub base: NodeBase,
+    pub radius: f64,
+    pub fill: Option<String>,
+    pub stroke: Option<String>,
+    pub stroke_width: Option<f64>,
+    pub draw_progress: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -300,6 +326,21 @@ pub struct RectNode {
     pub stroke: Option<String>,
     pub stroke_width: Option<f64>,
     pub corner_radius: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineNode {
+    #[serde(flatten)]
+    pub base: NodeBase,
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
+    pub stroke: Option<String>,
+    pub stroke_width: Option<f64>,
+    pub cap: Option<LineCap>,
+    pub draw_progress: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -413,6 +454,11 @@ pub struct TimelineEvent {
     pub dy: Option<f64>,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    pub radius: Option<f64>,
+    pub x1: Option<f64>,
+    pub y1: Option<f64>,
+    pub x2: Option<f64>,
+    pub y2: Option<f64>,
     pub rotate: Option<f64>,
     pub scale: Option<f64>,
     pub scale_x: Option<f64>,
@@ -439,6 +485,11 @@ impl TimelineEvent {
             "dy" => self.dy,
             "width" => self.width,
             "height" => self.height,
+            "radius" => self.radius,
+            "x1" => self.x1,
+            "y1" => self.y1,
+            "x2" => self.x2,
+            "y2" => self.y2,
             "rotate" => self.rotate,
             "scale" => self.scale,
             "scaleX" => self.scale_x,

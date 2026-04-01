@@ -94,8 +94,15 @@ fn style_for_node(node: &Node, is_root: bool, measurer: &impl TextMeasurer) -> S
         Node::Arrow(_) => {
             style.size = fixed_size(0.0, 0.0);
         }
+        Node::Circle(node) => {
+            let diameter = node.radius * 2.0;
+            style.size = fixed_size(diameter, diameter);
+        }
         Node::Icon(node) => {
             style.size = fixed_size(node.width, node.height);
+        }
+        Node::Line(node) => {
+            style.size = fixed_size((node.x2 - node.x1).abs(), (node.y2 - node.y1).abs());
         }
         Node::Text(node) => {
             let measured = measurer.measure_text_node(node);
