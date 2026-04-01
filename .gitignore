@@ -34,10 +34,6 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-/.agents
-/.claude
-/.codex
-/.cursor
 /public/renders
 /engine/target
 __pycache__/
