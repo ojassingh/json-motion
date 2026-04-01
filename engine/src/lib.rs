@@ -5,7 +5,6 @@ pub mod encode;
 pub mod gpu;
 pub mod icon;
 pub mod layout;
-pub mod parallel_encode;
 pub mod render;
 pub mod schema;
 pub mod scene;
@@ -56,7 +55,6 @@ struct EncodeRequest<'a> {
     backend: BackendRequest,
     codec: &'a str,
     output_path: &'a str,
-    parallel_workers: usize,
     total_frames: usize,
 }
 
@@ -72,17 +70,6 @@ pub fn run() -> Result<(), String> {
     let output_path = &args[2];
 
     let backend_request = BackendRequest::from_args(&args)?;
-    let parallel_workers = args
-        .iter()
-        .find_map(|arg| arg.strip_prefix("--parallel-workers="))
-        .and_then(|value| value.parse::<usize>().ok())
-        .or_else(|| {
-            env::var("VIDEO_RENDER_PARALLEL_WORKERS")
-                .ok()?
-                .parse::<usize>()
-                .ok()
-        })
-        .unwrap_or(1);
 
     let codec = args
         .get(3)
@@ -117,7 +104,6 @@ pub fn run() -> Result<(), String> {
         backend: backend_request,
         codec: &codec,
         output_path,
-        parallel_workers,
         total_frames: total as usize,
     };
     let timings = run_encode(&desc, &compiled, &measurer, request)?;
@@ -155,20 +141,21 @@ fn run_encode(
             }
         };
         if let Some(backend) = gpu_backend {
-            eprintln!(
-                "backend=gpu (wgpu), parallel_workers={}",
-                request.parallel_workers
-            );
-            return parallel_encode::parallel_encode_wgpu(
-                desc,
-                compiled,
-                parallel_encode::ParallelEncodeRequest {
+            eprintln!("backend=gpu (wgpu)");
+            let mut backend = backend;
+            return encode::encode_wgpu(
+                encode::WgpuEncodeRequest {
+                    backend: &mut backend,
                     codec: request.codec,
-                    output_path: request.output_path,
+                    fps: desc.fps,
                     frame_count: request.total_frames,
-                    num_workers: request.parallel_workers,
+                    height: desc.height,
+                    measurer: measurer as &dyn TextMeasurer,
+                    output_path: request.output_path,
+                    width: desc.width,
                 },
-                backend,
+                |frame_index| animation::resolve_frame_fast(compiled, frame_index as u32, measurer),
+                |frame_index| animation::frame_render_hint(compiled, frame_index as u32),
             );
         }
     }
@@ -182,25 +169,6 @@ fn run_encode(
             );
         }
         eprintln!("warning: engine built without the 'gpu' feature, using CPU");
-    }
-
-    if request.parallel_workers > 1 {
-        eprintln!(
-            "backend=cpu (skia), parallel_workers={}",
-            request.parallel_workers
-        );
-        return parallel_encode::parallel_encode(
-            desc,
-            compiled,
-            measurer,
-            parallel_encode::ParallelEncodeRequest {
-                codec: request.codec,
-                output_path: request.output_path,
-                frame_count: request.total_frames,
-                num_workers: request.parallel_workers,
-            },
-            cpu_backend_factory,
-        );
     }
 
     eprintln!("backend=cpu (skia)");
@@ -217,10 +185,6 @@ fn run_encode(
             backend.render_into(&frame, target, measurer as &dyn TextMeasurer)
         },
     )
-}
-
-fn cpu_backend_factory(_width: u32, _height: u32) -> Result<Box<dyn RenderBackend>, String> {
-    Ok(Box::new(render::CpuSkiaBackend::new()))
 }
 
 #[cfg(test)]
