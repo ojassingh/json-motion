@@ -11,7 +11,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::render::{FrameBuffer, RenderBackend};
+use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
 use crate::shared::types::{
     ResolvedFrame, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedText,
 };
@@ -102,7 +102,12 @@ struct StaticBuffer<T> {
 }
 
 impl<T: Pod> StaticBuffer<T> {
-    fn new(device: &wgpu::Device, label: &'static str, usage: wgpu::BufferUsages, data: &[T]) -> Self {
+    fn new(
+        device: &wgpu::Device,
+        label: &'static str,
+        usage: wgpu::BufferUsages,
+        data: &[T],
+    ) -> Self {
         Self {
             buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
@@ -193,11 +198,10 @@ async fn request_nvidia_vulkan_adapter(instance: &wgpu::Instance) -> Result<wgpu
 
 /// GPU render backend backed by wgpu.
 ///
-/// Phase 1: only `ResolvedNodeData::Rect` nodes are handled on the GPU.
-/// Any frame that contains text or icon nodes falls back to `CpuSkiaBackend`
-/// so output is always correct.  Text and icons will be accelerated in
-/// Phases 2 and 3.
+/// Frames containing unsupported primitives fall back to `CpuSkiaBackend`
+/// so correctness is preserved while GPU coverage grows incrementally.
 pub struct WgpuBackend {
+    cpu_fallback: CpuSkiaBackend,
     device: wgpu::Device,
     queue: wgpu::Queue,
     framebuffer: wgpu::Texture,
@@ -328,6 +332,7 @@ impl WgpuBackend {
         let readback = ReadbackBuffer::new(&device, width, height);
 
         Ok(Self {
+            cpu_fallback: CpuSkiaBackend::new(),
             device,
             queue,
             framebuffer,
@@ -394,26 +399,14 @@ impl WgpuBackend {
             a: 1.0,
         };
 
-        self.rect_instances.write(
-            &self.device,
-            &self.queue,
-            &prepared.dynamic_rect_instances,
-        );
-        self.text_instances.write(
-            &self.device,
-            &self.queue,
-            &prepared.dynamic_text_instances,
-        );
-        self.path_vertices.write(
-            &self.device,
-            &self.queue,
-            &prepared.dynamic_path_vertices,
-        );
-        self.path_indices.write(
-            &self.device,
-            &self.queue,
-            &prepared.dynamic_path_indices,
-        );
+        self.rect_instances
+            .write(&self.device, &self.queue, &prepared.dynamic_rect_instances);
+        self.text_instances
+            .write(&self.device, &self.queue, &prepared.dynamic_text_instances);
+        self.path_vertices
+            .write(&self.device, &self.queue, &prepared.dynamic_path_vertices);
+        self.path_indices
+            .write(&self.device, &self.queue, &prepared.dynamic_path_indices);
 
         let mut encoder = self
             .device
@@ -490,9 +483,10 @@ impl WgpuBackend {
                 );
             }
 
-            if let (Some(cache), Some(text_buffer)) =
-                (self.dynamic_text_atlas_cache.as_ref(), self.text_instances.get())
-            {
+            if let (Some(cache), Some(text_buffer)) = (
+                self.dynamic_text_atlas_cache.as_ref(),
+                self.text_instances.get(),
+            ) {
                 TextBatch::draw(
                     &self.text_pipeline,
                     &mut pass,
@@ -540,6 +534,15 @@ impl WgpuBackend {
         self.collect_frame(target)
     }
 
+    fn supports_frame(frame: &ResolvedFrame) -> bool {
+        frame.nodes.iter().all(|node| {
+            matches!(
+                node.data,
+                ResolvedNodeData::Rect(_) | ResolvedNodeData::Text(_) | ResolvedNodeData::Icon(_)
+            )
+        })
+    }
+
     fn prepare_frame_batch(
         &mut self,
         frame: &ResolvedFrame,
@@ -578,7 +581,9 @@ impl WgpuBackend {
         let dynamic_text_instances = self
             .dynamic_text_atlas_cache
             .as_ref()
-            .map_or_else(Vec::new, |cache| build_text_instances(cache, &dynamic_text_nodes));
+            .map_or_else(Vec::new, |cache| {
+                build_text_instances(cache, &dynamic_text_nodes)
+            });
 
         let mut dynamic_path_vertices = Vec::new();
         let mut dynamic_path_indices = Vec::new();
@@ -939,6 +944,9 @@ impl RenderBackend for WgpuBackend {
         measurer: &dyn TextMeasurer,
     ) -> Result<(), String> {
         self.ensure_dims(target.width(), target.height());
+        if !Self::supports_frame(frame) {
+            return self.cpu_fallback.render_into(frame, target, measurer);
+        }
         self.render_gpu(frame, target, measurer)
     }
 }

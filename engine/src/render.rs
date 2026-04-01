@@ -4,10 +4,10 @@ use skia_safe::{
 };
 
 use crate::icon;
-use crate::schema::TextAlign;
+use crate::schema::{LineCap, TextAlign};
 use crate::shared::types::{
-    ResolvedArrow, ResolvedFrame, ResolvedFunctionGraph, ResolvedNode, ResolvedNodeData,
-    ResolvedParametricGraph, ResolvedRect, ResolvedText,
+    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine,
+    ResolvedNode, ResolvedNodeData, ResolvedParametricGraph, ResolvedRect, ResolvedText,
 };
 use crate::text::{self, TextMeasurer};
 
@@ -94,8 +94,10 @@ impl RenderBackend for CpuSkiaBackend {
         for node in &frame.nodes {
             match &node.data {
                 ResolvedNodeData::Arrow(arrow) => draw_arrow(canvas, node, arrow),
+                ResolvedNodeData::Circle(circle) => draw_circle(canvas, node, circle),
                 ResolvedNodeData::FunctionGraph(graph) => draw_function_graph(canvas, node, graph),
                 ResolvedNodeData::Icon(icon) => icon::draw_icon(canvas, node, icon),
+                ResolvedNodeData::Line(line) => draw_line(canvas, node, line),
                 ResolvedNodeData::ParametricGraph(graph) => {
                     draw_parametric_graph(canvas, node, graph)
                 }
@@ -256,6 +258,39 @@ fn draw_graph_path(
     canvas.restore();
 }
 
+fn draw_circle(canvas: &skia_safe::Canvas, node: &ResolvedNode, circle: &ResolvedCircle) {
+    let diameter = (circle.radius * 2.0) as f32;
+    let shape = Rect::from_xywh(0.0, 0.0, diameter, diameter);
+    let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
+
+    canvas.save();
+    apply_node_transform(canvas, node, diameter, diameter);
+
+    if let Some(fill) = circle.fill {
+        canvas.draw_oval(shape, &make_paint(alpha, fill, paint::Style::Fill));
+    }
+
+    if let Some(stroke) = circle.stroke {
+        if circle.stroke_width > 0.0 {
+            let mut paint = make_paint(alpha, stroke, paint::Style::Stroke);
+            paint.set_stroke_width(circle.stroke_width as f32);
+            if circle.draw_progress < 1.0 {
+                canvas.draw_arc(
+                    shape,
+                    270.0,
+                    (360.0 * circle.draw_progress) as f32,
+                    false,
+                    &paint,
+                );
+            } else {
+                canvas.draw_oval(shape, &paint);
+            }
+        }
+    }
+
+    canvas.restore();
+}
+
 fn draw_function_graph(
     canvas: &skia_safe::Canvas,
     node: &ResolvedNode,
@@ -267,7 +302,11 @@ fn draw_function_graph(
     apply_node_transform(canvas, node, graph.width as f32, graph.height as f32);
 
     if graph.show_grid {
-        let mut grid_paint = make_paint(alpha / 3, muted_color(graph.color, 0.45), paint::Style::Stroke);
+        let mut grid_paint = make_paint(
+            alpha / 3,
+            muted_color(graph.color, 0.45),
+            paint::Style::Stroke,
+        );
         grid_paint.set_stroke_width(1.0);
 
         const GRID_DIVISIONS: usize = 5;
@@ -282,7 +321,11 @@ fn draw_function_graph(
 
     if graph.show_axes {
         if let (Some([x_min, x_max]), Some([y_min, y_max])) = (graph.x_range, graph.y_range) {
-            let mut axis_paint = make_paint(alpha / 2, muted_color(graph.color, 0.65), paint::Style::Stroke);
+            let mut axis_paint = make_paint(
+                alpha / 2,
+                muted_color(graph.color, 0.65),
+                paint::Style::Stroke,
+            );
             axis_paint.set_stroke_width(1.5);
 
             if x_min <= 0.0 && x_max >= 0.0 && x_min != x_max {
@@ -326,6 +369,43 @@ fn draw_parametric_graph(
         graph.stroke_width,
         graph.draw_progress,
     );
+}
+
+fn draw_line(canvas: &skia_safe::Canvas, node: &ResolvedNode, line: &ResolvedLine) {
+    let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
+    let dx = line.x2 - line.x1;
+    let dy = line.y2 - line.y1;
+    let progress = line.draw_progress.clamp(0.0, 1.0);
+    let end = (line.x1 + dx * progress, line.y1 + dy * progress);
+
+    canvas.save();
+    apply_node_transform(
+        canvas,
+        node,
+        (line.x2 - line.x1).abs() as f32,
+        (line.y2 - line.y1).abs() as f32,
+    );
+
+    if line.stroke_width > 0.0 {
+        let mut paint = make_paint(alpha, line.stroke, paint::Style::Stroke);
+        paint.set_stroke_width(line.stroke_width as f32);
+        paint.set_stroke_cap(line_cap(line.cap));
+        canvas.draw_line(
+            (line.x1 as f32, line.y1 as f32),
+            (end.0 as f32, end.1 as f32),
+            &paint,
+        );
+    }
+
+    canvas.restore();
+}
+
+fn line_cap(cap: LineCap) -> paint::Cap {
+    match cap {
+        LineCap::Round => paint::Cap::Round,
+        LineCap::Square => paint::Cap::Square,
+        LineCap::Butt => paint::Cap::Butt,
+    }
 }
 
 fn draw_text(
@@ -385,10 +465,10 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive};
+    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap};
     use crate::shared::types::{
-        ResolvedArrow, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon, ResolvedNode,
-        ResolvedNodeBatchKind, ResolvedNodeData,
+        ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
+        ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
     };
     use crate::text::SkiaTextMeasurer;
     use crate::text::TextMeasurer;
@@ -503,7 +583,13 @@ mod tests {
                 data: ResolvedNodeData::FunctionGraph(ResolvedFunctionGraph {
                     width: 64.0,
                     height: 64.0,
-                    points: vec![(0.0, 48.0), (16.0, 32.0), (32.0, 16.0), (48.0, 8.0), (64.0, 0.0)],
+                    points: vec![
+                        (0.0, 48.0),
+                        (16.0, 32.0),
+                        (32.0, 16.0),
+                        (48.0, 8.0),
+                        (64.0, 0.0),
+                    ],
                     color: (0, 0, 0),
                     stroke_width: 2.0,
                     show_axes: true,
@@ -539,6 +625,95 @@ mod tests {
                 .chunks_exact(4)
                 .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
             "expected function graph rendering to change at least one pixel"
+        );
+    }
+
+    #[test]
+    fn circle_rendering_should_paint_non_background_pixels() {
+        let frame = ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![ResolvedNode {
+                batch_kind: ResolvedNodeBatchKind::Dynamic,
+                data: ResolvedNodeData::Circle(ResolvedCircle {
+                    radius: 20.0,
+                    fill: Some((56, 189, 248)),
+                    stroke: Some((15, 23, 42)),
+                    stroke_width: 3.0,
+                    draw_progress: 1.0,
+                }),
+                x: 8.0,
+                y: 8.0,
+                opacity: 1.0,
+                rotation: 0.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                skew_x: 0.0,
+                skew_y: 0.0,
+                z_index: 0,
+                source_index: 0,
+            }],
+            scene_cache_key: 0,
+        };
+        let measurer = SkiaTextMeasurer::new();
+        let mut backend = CpuSkiaBackend::new();
+        let mut buffer = FrameBuffer::new(64, 64);
+
+        backend
+            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
+            .expect("circle frame should render");
+
+        assert!(
+            buffer
+                .pixels()
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
+            "expected circle rendering to change at least one pixel"
+        );
+    }
+
+    #[test]
+    fn line_rendering_should_paint_non_background_pixels() {
+        let frame = ResolvedFrame {
+            background: (255, 255, 255),
+            nodes: vec![ResolvedNode {
+                batch_kind: ResolvedNodeBatchKind::Dynamic,
+                data: ResolvedNodeData::Line(ResolvedLine {
+                    x1: 0.0,
+                    y1: 0.0,
+                    x2: 48.0,
+                    y2: 0.0,
+                    stroke: (0, 0, 0),
+                    stroke_width: 4.0,
+                    cap: LineCap::Round,
+                    draw_progress: 1.0,
+                }),
+                x: 8.0,
+                y: 24.0,
+                opacity: 1.0,
+                rotation: 0.0,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                skew_x: 0.0,
+                skew_y: 0.0,
+                z_index: 0,
+                source_index: 0,
+            }],
+            scene_cache_key: 0,
+        };
+        let measurer = SkiaTextMeasurer::new();
+        let mut backend = CpuSkiaBackend::new();
+        let mut buffer = FrameBuffer::new(64, 64);
+
+        backend
+            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
+            .expect("line frame should render");
+
+        assert!(
+            buffer
+                .pixels()
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
+            "expected line rendering to change at least one pixel"
         );
     }
 }
