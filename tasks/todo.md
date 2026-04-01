@@ -1,3 +1,33 @@
+- [ ] Restructure the GPU export path so rendering and encoding overlap instead of serializing on one thread.
+- [ ] Replace multi-GPU-worker export with a single-GPU producer and CPU encode workers only when it improves wall time.
+- [ ] Add explicit fast paths only where they clearly pay off: static-frame reuse, startup overlap, and codec-friendly frame handling.
+- [ ] Consolidate benchmark scripts into a single benchmark directory and extend them to measure the new pipeline shape.
+- [ ] Run release benchmarks plus targeted correctness checks, document results, create many small conventional commits, push the branch, and open a PR.
+
+---
+
+## GPU Export Overlap Pass
+
+### Plan
+
+- Build the fastest lean pipeline first: one GPU render lane, bounded buffering, and parallel CPU encode only where it reduces wall time without GPU contention.
+- Keep the public render contract stable unless a narrower internal seam materially improves throughput.
+- Use benchmarks to decide which fast paths stay; avoid redundant caches or abstractions that do not move wall time.
+
+### Review
+
+- Pending implementation.
+
+### Verification
+
+- Pending implementation.
+
+### Result
+
+- Pending implementation.
+
+---
+
 - [x] Review the current worktree and split it into the smallest coherent commits.
 - [x] Stage and commit each change set with conventional commit notation.
 - [x] Run targeted verification after the commit split and push the branch.
