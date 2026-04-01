@@ -9,7 +9,7 @@
     "start": "next start",
     "test": "bun test",
     "render:fixture": "bun run scripts/render-fixture.ts",
-    "bench:engine": "bun run scripts/benchmark-engine.ts",
+    "bench:engine": "bun run benchmarks/benchmark-engine.ts",
     "prompt:smoke": "bun run scripts/prompt-to-video-smoke.ts",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",

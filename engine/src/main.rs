@@ -143,8 +143,8 @@ fn run_encode(
 
     #[cfg(feature = "gpu")]
     if use_gpu {
-        let gpu_available = match gpu_backend_factory(desc.width, desc.height) {
-            Ok(_) => true,
+        let gpu_backend = match gpu::WgpuBackend::new(desc.width, desc.height) {
+            Ok(backend) => Some(backend),
             Err(error) => {
                 if request.backend.requires_gpu() {
                     return Err(format!(
@@ -152,43 +152,24 @@ fn run_encode(
                     ));
                 }
                 eprintln!("GPU init failed ({error}); falling back to CPU");
-                false
+                None
             }
         };
-        if gpu_available {
-            if request.parallel_workers > 1 {
-                eprintln!(
-                    "backend=gpu (wgpu), parallel_workers={}",
-                    request.parallel_workers
-                );
-                return parallel_encode::parallel_encode_wgpu(
-                    desc,
-                    compiled,
-                    parallel_encode::ParallelEncodeRequest {
-                        codec: request.codec,
-                        output_path: request.output_path,
-                        frame_count: request.total_frames,
-                        num_workers: request.parallel_workers,
-                    },
-                );
-            }
-            let mut backend = gpu::WgpuBackend::new(desc.width, desc.height)
-                .map_err(|error| format!("failed to initialize GPU backend: {error}"))?;
-            eprintln!("backend=gpu (wgpu)");
-            return encode::encode_wgpu(
-                encode::WgpuEncodeRequest {
-                    backend: &mut backend,
+        if let Some(backend) = gpu_backend {
+            eprintln!(
+                "backend=gpu (wgpu), parallel_workers={}",
+                request.parallel_workers
+            );
+            return parallel_encode::parallel_encode_wgpu(
+                desc,
+                compiled,
+                parallel_encode::ParallelEncodeRequest {
                     codec: request.codec,
-                    fps: desc.fps,
-                    frame_count: request.total_frames,
-                    height: desc.height,
-                    measurer: measurer as &dyn TextMeasurer,
                     output_path: request.output_path,
-                    width: desc.width,
+                    frame_count: request.total_frames,
+                    num_workers: request.parallel_workers,
                 },
-                |frame_index| {
-                    animation::resolve_frame_fast(compiled, frame_index as u32, measurer)
-                },
+                backend,
             );
         }
     }
@@ -241,11 +222,6 @@ fn run_encode(
 
 fn cpu_backend_factory(_width: u32, _height: u32) -> Result<Box<dyn RenderBackend>, String> {
     Ok(Box::new(render::CpuSkiaBackend::new()))
-}
-
-#[cfg(feature = "gpu")]
-fn gpu_backend_factory(width: u32, height: u32) -> Result<Box<dyn RenderBackend>, String> {
-    Ok(Box::new(gpu::WgpuBackend::new(width, height)?))
 }
 
 fn main() {
