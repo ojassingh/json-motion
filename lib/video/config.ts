@@ -51,3 +51,6 @@ export const getModalRenderToken = (): string | null => {
   const token = process.env.MODAL_RENDER_TOKEN?.trim();
   return token && token.length > 0 ? token : null;
 };
+
+export const getModalVideoCodec = (): string =>
+  process.env.MODAL_RENDER_CODEC?.trim() || DEFAULT_MODAL_VIDEO_CODEC;
