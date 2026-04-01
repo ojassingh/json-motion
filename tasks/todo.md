@@ -567,3 +567,10 @@
 - [x] Keep the frontend response contract stable so `video.url` continues to drive playback without UI churn.
 - [x] Update focused render-route coverage for the provider switch and response contract.
 - [x] Run targeted verification and document the final behavior.
+
+### Review
+
+- Added `scripts/modal_render_api.py` as a dedicated production Modal endpoint that renders with the existing Rust engine, uploads the finished MP4 to R2, and returns the same core metadata the app already expects.
+- Kept the Next.js integration lean by teaching `lib/video/render-video.ts` to choose between the existing local Rust path and the new Modal path based on env, while preserving the `publicUrl` contract used by the UI.
+- Added a small server-only `lib/video/modal-render.ts` helper plus remote object-key helpers in `lib/video/storage.ts` so the orchestration logic stays narrow and the frontend did not need to change.
+- Added focused provider-switch coverage in `lib/video/render-video.test.ts` and kept the existing `/api/render` route contract unchanged.
