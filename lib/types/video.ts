@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
 import type {
+  videoAiEquationNodeSchema,
   videoAiIconNodeSchema,
   videoAiNodeSchema,
   videoAiOutputSchema,
@@ -36,6 +37,7 @@ export type VideoAnchor = z.infer<typeof videoAnchorSchema>;
 export type VideoColor = z.infer<typeof videoHexColorSchema>;
 export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;
+export type VideoAiEquationNode = z.infer<typeof videoAiEquationNodeSchema>;
 export type VideoAiIconNode = z.infer<typeof videoAiIconNodeSchema>;
 export type VideoAiNode = z.infer<typeof videoAiNodeSchema>;
 export type VideoAiRenderableNode = Exclude<VideoAiNode, { type: "repeat" }>;
