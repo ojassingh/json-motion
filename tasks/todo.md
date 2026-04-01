@@ -557,3 +557,31 @@
 - `cargo clippy --all-targets --locked -- -D warnings` in `engine/`
 - `cargo build --release` in `engine/`
 - `bun run build`
+
+---
+
+## Modal R2 Render Delivery
+
+- [x] Add a production Modal render endpoint that renders with the Rust engine, uploads the MP4 to R2, and returns render metadata.
+- [x] Add a lean Next.js render provider switch so `/api/render` uses Modal by default and local rendering only when configured.
+- [x] Keep the frontend response contract stable so `video.url` continues to drive playback without UI churn.
+- [x] Update focused render-route coverage for the provider switch and response contract.
+- [x] Run targeted verification and document the final behavior.
+
+### Review
+
+- Added `scripts/modal_render_api.py` as a dedicated production Modal endpoint that renders with the existing Rust engine, uploads the finished MP4 to R2, and returns the same core metadata the app already expects.
+- Kept the Next.js integration lean by teaching `lib/video/render-video.ts` to choose between the existing local Rust path and the new Modal path based on env, while preserving the `publicUrl` contract used by the UI.
+- Added a small server-only `lib/video/modal-render.ts` helper plus remote object-key helpers in `lib/video/storage.ts` so the orchestration logic stays narrow and the frontend did not need to change.
+- Added focused provider-switch coverage in `lib/video/render-video.test.ts` and kept the existing `/api/render` route contract unchanged.
+
+### Verification
+
+- `bun test app/api/render/route.test.ts lib/video/render-video.test.ts`
+- `bun run typecheck`
+- `bunx ultracite check lib/video/config.ts lib/video/storage.ts lib/video/modal-render.ts lib/video/render-video.ts lib/video/render-video.test.ts app/api/render/route.ts app/api/render/route.test.ts`
+- `python3 -m py_compile scripts/modal_render_api.py`
+
+### Notes
+
+- Verified the local and orchestration code paths in-repo, but did not run a live end-to-end Modal render because that requires a deployed Modal endpoint plus configured R2 environment variables in the remote runtime.
