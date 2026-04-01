@@ -8,11 +8,29 @@ use ffmpeg::util::rational::Rational;
 use ffmpeg_next as ffmpeg;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "gpu")]
+use crate::gpu::WgpuBackend;
 use crate::render::FrameBuffer;
+#[cfg(feature = "gpu")]
+use crate::shared::types::ResolvedFrame;
+#[cfg(feature = "gpu")]
+use crate::text::TextMeasurer;
 
 pub struct EncodeTimings {
     pub encode: Duration,
     pub render: Duration,
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) struct WgpuInlineEncodeRequest<'a> {
+    pub backend: &'a mut WgpuBackend,
+    pub codec: &'a str,
+    pub fps: f64,
+    pub frame_count: usize,
+    pub height: u32,
+    pub measurer: &'a dyn TextMeasurer,
+    pub output_path: &'a str,
+    pub width: u32,
 }
 
 pub(crate) struct RgbaVideoEncoder {
@@ -294,6 +312,72 @@ where
         encode_duration += encode_start.elapsed();
 
         std::mem::swap(&mut fb_a, &mut fb_b);
+    }
+
+    let flush_start = Instant::now();
+    encoder.finish()?;
+    encode_duration += flush_start.elapsed();
+
+    Ok(EncodeTimings {
+        encode: encode_duration,
+        render: render_duration,
+    })
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) fn encode_wgpu_inline<F>(
+    request: WgpuInlineEncodeRequest<'_>,
+    mut resolve_frame: F,
+) -> Result<EncodeTimings, String>
+where
+    F: FnMut(usize) -> Result<ResolvedFrame, String>,
+{
+    let WgpuInlineEncodeRequest {
+        backend,
+        codec,
+        fps,
+        frame_count,
+        height,
+        measurer,
+        output_path,
+        width,
+    } = request;
+
+    let mut encoder = RgbaVideoEncoder::new(width, height, fps, codec, output_path)?;
+    let mut render_duration = Duration::ZERO;
+    let mut encode_duration = Duration::ZERO;
+    let mut buffers = [FrameBuffer::new(width, height), FrameBuffer::new(width, height)];
+    let mut buffer_index = 0usize;
+    let mut submitted = 0usize;
+    let mut encoded = 0usize;
+
+    while submitted < frame_count && backend.can_accept_frame() {
+        let render_start = Instant::now();
+        let frame = resolve_frame(submitted)?;
+        backend.submit_frame(&frame, measurer)?;
+        render_duration += render_start.elapsed();
+        submitted += 1;
+    }
+
+    while encoded < frame_count {
+        let render_start = Instant::now();
+        backend.collect_frame(&mut buffers[buffer_index])?;
+        render_duration += render_start.elapsed();
+
+        while submitted < frame_count && backend.can_accept_frame() {
+            let render_start = Instant::now();
+            let frame = resolve_frame(submitted)?;
+            backend.submit_frame(&frame, measurer)?;
+            render_duration += render_start.elapsed();
+            submitted += 1;
+        }
+
+        let encode_start = Instant::now();
+        encoder.encode_rgba_pixels(buffers[buffer_index].pixels(), encoded as i64)?;
+        encode_duration += encode_start.elapsed();
+
+        buffer_index = (buffer_index + 1) % buffers.len();
+        encoded += 1;
     }
 
     let flush_start = Instant::now();

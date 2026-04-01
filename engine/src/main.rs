@@ -143,8 +143,8 @@ fn run_encode(
 
     #[cfg(feature = "gpu")]
     if use_gpu {
-        let gpu_available = match gpu_backend_factory(desc.width, desc.height) {
-            Ok(_) => true,
+        let gpu_backend = match gpu::WgpuBackend::new(desc.width, desc.height) {
+            Ok(backend) => Some(backend),
             Err(error) => {
                 if request.backend.requires_gpu() {
                     return Err(format!(
@@ -152,10 +152,10 @@ fn run_encode(
                     ));
                 }
                 eprintln!("GPU init failed ({error}); falling back to CPU");
-                false
+                None
             }
         };
-        if gpu_available {
+        if let Some(backend) = gpu_backend {
             eprintln!(
                 "backend=gpu (wgpu), parallel_workers={}",
                 request.parallel_workers
@@ -169,6 +169,7 @@ fn run_encode(
                     frame_count: request.total_frames,
                     num_workers: request.parallel_workers,
                 },
+                backend,
             );
         }
     }
@@ -221,11 +222,6 @@ fn run_encode(
 
 fn cpu_backend_factory(_width: u32, _height: u32) -> Result<Box<dyn RenderBackend>, String> {
     Ok(Box::new(render::CpuSkiaBackend::new()))
-}
-
-#[cfg(feature = "gpu")]
-fn gpu_backend_factory(width: u32, height: u32) -> Result<Box<dyn RenderBackend>, String> {
-    Ok(Box::new(gpu::WgpuBackend::new(width, height)?))
 }
 
 fn main() {

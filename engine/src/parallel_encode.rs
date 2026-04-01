@@ -12,6 +12,9 @@ use crate::render::RenderBackend;
 use crate::schema::VideoDescription;
 use crate::text::{SkiaTextMeasurer, TextMeasurer};
 
+#[cfg(feature = "gpu")]
+const INLINE_GPU_FRAME_THRESHOLD: usize = 240;
+
 #[derive(Clone, Copy)]
 pub struct ParallelEncodeRequest<'a> {
     pub codec: &'a str,
@@ -220,7 +223,25 @@ pub fn parallel_encode_wgpu(
     desc: &VideoDescription,
     compiled: &CompiledVideo<'_>,
     request: ParallelEncodeRequest<'_>,
+    mut backend: WgpuBackend,
 ) -> Result<EncodeTimings, String> {
+    if request.frame_count <= INLINE_GPU_FRAME_THRESHOLD {
+        let local_measurer = SkiaTextMeasurer::new();
+        return encode::encode_wgpu_inline(
+            encode::WgpuInlineEncodeRequest {
+                backend: &mut backend,
+                codec: request.codec,
+                fps: desc.fps,
+                frame_count: request.frame_count,
+                height: desc.height,
+                measurer: &local_measurer as &dyn TextMeasurer,
+                output_path: request.output_path,
+                width: desc.width,
+            },
+            |frame_index| animation::resolve_frame_fast(compiled, frame_index as u32, &local_measurer),
+        );
+    }
+
     let worker_count = request.num_workers.max(1).min(request.frame_count.max(1));
     let effective_request = ParallelEncodeRequest {
         num_workers: worker_count,
@@ -274,7 +295,6 @@ pub fn parallel_encode_wgpu(
             .collect::<Vec<_>>();
 
         let local_measurer = SkiaTextMeasurer::new();
-        let mut backend = WgpuBackend::new(width, height)?;
         let producer_started = Instant::now();
         let mut inflight_frames = std::collections::VecDeque::new();
         let mut dispatched_frames = 0usize;
