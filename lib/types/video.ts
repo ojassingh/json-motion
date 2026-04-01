@@ -7,6 +7,9 @@ import type {
   videoAiSceneSchema,
   videoAlignNodeSchema,
   videoAnchorSchema,
+  videoArrowEndpointRefSchema,
+  videoArrowNodeSchema,
+  videoArrowPositionSchema,
   videoCenterNodeSchema,
   videoDescriptionSchema,
   videoEasingSchema,
@@ -16,6 +19,8 @@ import type {
   videoIconNodeSchema,
   videoIconPrimitiveSchema,
   videoNodeSchema,
+  videoPointSchema,
+  videoRepeatNodeSchema,
   videoSceneSchema,
   videoStackAlignSchema,
   videoStackDirectionSchema,
@@ -32,11 +37,16 @@ export type VideoDescription = z.infer<typeof videoDescriptionSchema>;
 export type VideoEasingName = z.infer<typeof videoEasingSchema>;
 export type VideoAiIconNode = z.infer<typeof videoAiIconNodeSchema>;
 export type VideoAiNode = z.infer<typeof videoAiNodeSchema>;
+export type VideoArrowEndpointRef = z.infer<typeof videoArrowEndpointRefSchema>;
+export type VideoArrowNode = z.infer<typeof videoArrowNodeSchema>;
+export type VideoArrowPosition = z.infer<typeof videoArrowPositionSchema>;
 export type VideoIconLineCap = z.infer<typeof videoIconLineCapSchema>;
 export type VideoIconLineJoin = z.infer<typeof videoIconLineJoinSchema>;
 export type VideoIconNode = z.infer<typeof videoIconNodeSchema>;
 export type VideoIconPrimitive = z.infer<typeof videoIconPrimitiveSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
+export type VideoPoint = z.infer<typeof videoPointSchema>;
+export type VideoRepeatNode = z.infer<typeof videoRepeatNodeSchema>;
 export type VideoScene = z.infer<typeof videoSceneSchema>;
 export type VideoStackAlign = z.infer<typeof videoStackAlignSchema>;
 export type VideoStackDirection = z.infer<typeof videoStackDirectionSchema>;

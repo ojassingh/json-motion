@@ -38,6 +38,12 @@ export const videoEasingSchema = z.enum([
 
 export const videoIconLineCapSchema = z.enum(["butt", "round", "square"]);
 export const videoIconLineJoinSchema = z.enum(["bevel", "miter", "round"]);
+export const videoArrowPositionSchema = z.enum([
+  "above",
+  "below",
+  "left",
+  "right",
+]);
 export const videoTextAlignSchema = z.enum(["center", "left", "right"]);
 export const videoStackDirectionSchema = z.enum(["horizontal", "vertical"]);
 export const videoStackAlignSchema = z.enum(["start", "center", "end"]);
@@ -72,6 +78,40 @@ export const videoRectNodeSchema = videoNodeBaseSchema
     strokeWidth: nn.optional(),
     type: z.literal("rect"),
     width: pos,
+  })
+  .strict();
+
+export const videoPointSchema = z
+  .object({
+    x: fin,
+    y: fin,
+  })
+  .strict();
+
+export const videoArrowEndpointRefSchema = z
+  .object({
+    anchor: videoAnchorSchema.optional(),
+    node: z.string().trim().min(1),
+  })
+  .strict();
+
+export const videoArrowEndpointSchema = z.union([
+  videoPointSchema,
+  videoArrowEndpointRefSchema,
+]);
+
+export const videoArrowNodeSchema = videoNodeBaseSchema
+  .extend({
+    from: videoArrowEndpointSchema.optional(),
+    gap: nn.optional(),
+    headSize: pos.optional(),
+    length: pos.optional(),
+    position: videoArrowPositionSchema.optional(),
+    stroke: videoHexColorSchema.optional(),
+    strokeWidth: nn.optional(),
+    target: z.string().trim().min(1).optional(),
+    to: videoArrowEndpointSchema.optional(),
+    type: z.literal("arrow"),
   })
   .strict();
 
@@ -218,6 +258,25 @@ export const videoStackNodeSchema = videoNodeBaseSchema
   })
   .strict();
 
+const videoRepeatTemplateSchema = z.union([
+  videoArrowNodeSchema,
+  videoAiIconNodeSchema,
+  videoRectNodeSchema,
+  videoTextNodeSchema,
+]);
+
+export const videoRepeatNodeSchema = z
+  .object({
+    colStep: videoPointSchema.optional(),
+    cols: z.number().int().positive().max(32),
+    origin: videoPointSchema.optional(),
+    rowStep: videoPointSchema.optional(),
+    rows: z.number().int().positive().max(32),
+    template: videoRepeatTemplateSchema,
+    type: z.literal("repeat"),
+  })
+  .strict();
+
 // ---------------------------------------------------------------------------
 // Node unions
 // ---------------------------------------------------------------------------
@@ -225,6 +284,7 @@ export const videoStackNodeSchema = videoNodeBaseSchema
 // Engine node union: all types with fully-resolved payloads.
 export const videoNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
+  videoArrowNodeSchema,
   videoCenterNodeSchema,
   videoIconNodeSchema,
   videoRectNodeSchema,
@@ -237,9 +297,11 @@ export const videoNodeSchema = z.discriminatedUnion("type", [
 // serialising to Rust.
 export const videoAiNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
+  videoArrowNodeSchema,
   videoCenterNodeSchema,
   videoAiIconNodeSchema,
   videoRectNodeSchema,
+  videoRepeatNodeSchema,
   videoStackNodeSchema,
   videoTextNodeSchema,
 ]);

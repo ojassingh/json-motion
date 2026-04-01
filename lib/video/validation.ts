@@ -117,6 +117,99 @@ const validateTimelineTargets = (
   return issues;
 };
 
+const validateArrowNodes = (
+  scene: VideoScene,
+  basePath: Array<number | string>
+): VideoValidationIssue[] => {
+  const issues: VideoValidationIssue[] = [];
+  const nodeIds = new Set(Object.keys(scene.nodes));
+  const pushIssue = (message: string, path: Array<number | string>): void => {
+    issues.push({ message, path });
+  };
+
+  const validateEndpointRef = (
+    arrowId: string,
+    endpointName: "from" | "to",
+    endpoint: unknown
+  ): void => {
+    if (!(endpoint && typeof endpoint === "object" && "node" in endpoint)) {
+      return;
+    }
+    const ref = endpoint as { node: string };
+    if (!nodeIds.has(ref.node)) {
+      pushIssue(
+        `Arrow "${arrowId}" references non-existent endpoint node "${ref.node}".`,
+        [...basePath, "nodes", arrowId, endpointName, "node"]
+      );
+    }
+  };
+
+  const validateArrowNode = (
+    id: string,
+    node: Extract<VideoScene["nodes"][string], { type: "arrow" }>
+  ): void => {
+    const usesTargetMode = node.target != null || node.position != null;
+    const usesEndpointMode = node.from != null || node.to != null;
+    const nodePath = [...basePath, "nodes", id];
+    const validateTargetMode = (): void => {
+      if (!(node.target && node.position)) {
+        pushIssue(
+          `Arrow "${id}" must provide both \`target\` and \`position\` when using target-based placement.`,
+          nodePath
+        );
+        return;
+      }
+      if (!nodeIds.has(node.target)) {
+        pushIssue(
+          `Arrow "${id}" references non-existent target "${node.target}".`,
+          [...nodePath, "target"]
+        );
+      }
+    };
+    const validateEndpointMode = (): void => {
+      if (!(node.from && node.to)) {
+        pushIssue(
+          `Arrow "${id}" must provide both \`from\` and \`to\` when using endpoint placement.`,
+          nodePath
+        );
+      }
+      validateEndpointRef(id, "from", node.from);
+      validateEndpointRef(id, "to", node.to);
+    };
+
+    if (!(usesTargetMode || usesEndpointMode)) {
+      pushIssue(
+        `Arrow "${id}" must define either \`target\` + \`position\` or both \`from\` and \`to\`.`,
+        nodePath
+      );
+      return;
+    }
+
+    if (usesTargetMode && usesEndpointMode) {
+      pushIssue(
+        `Arrow "${id}" cannot mix \`target\`/\`position\` placement with \`from\`/\`to\` endpoints.`,
+        nodePath
+      );
+    }
+
+    if (usesTargetMode) {
+      validateTargetMode();
+    }
+
+    if (usesEndpointMode) {
+      validateEndpointMode();
+    }
+  };
+
+  for (const [id, node] of Object.entries(scene.nodes)) {
+    if (node.type === "arrow") {
+      validateArrowNode(id, node);
+    }
+  }
+
+  return issues;
+};
+
 export const collectVideoValidationIssues = (
   videoDescription: VideoDescription
 ): VideoValidationIssue[] => {
@@ -135,6 +228,7 @@ export const collectVideoValidationIssues = (
     previousSceneEnd = scene.startFrame + scene.duration - 1;
     const basePath = ["scenes", i];
     issues.push(...validateSceneTree(scene, basePath));
+    issues.push(...validateArrowNodes(scene, basePath));
     issues.push(...validateTimelineTargets(scene, basePath));
   }
 
