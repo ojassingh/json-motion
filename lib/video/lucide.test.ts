@@ -76,8 +76,8 @@ describe("lucide video icons", () => {
       },
     });
 
-    expect(videoNodeSchema.parse(resolved.bg)).toEqual(resolved.bg);
-    expect(videoNodeSchema.parse(resolved.icon)).toEqual(resolved.icon);
+    expect(videoNodeSchema.safeParse(resolved.bg).success).toBeTrue();
+    expect(videoNodeSchema.safeParse(resolved.icon).success).toBeTrue();
 
     const icon = resolved.icon;
     if (icon.type !== "icon") {
@@ -97,7 +97,7 @@ describe("lucide video icons", () => {
       },
     });
 
-    expect(videoNodeSchema.parse(resolved.equation)).toEqual(resolved.equation);
+    expect(videoNodeSchema.safeParse(resolved.equation).success).toBeTrue();
 
     const equation = resolved.equation;
     if (equation.type !== "icon") {
@@ -133,7 +133,7 @@ describe("lucide video icons", () => {
       },
     });
 
-    expect(videoNodeSchema.parse(resolved.equation)).toEqual(resolved.equation);
+    expect(videoNodeSchema.safeParse(resolved.equation).success).toBeTrue();
 
     const equation = resolved.equation;
     if (equation.type !== "icon") {

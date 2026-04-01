@@ -3,11 +3,14 @@ import dynamicIconImports from "lucide-react/dynamicIconImports";
 
 import type {
   VideoAiEquationNode,
+  VideoAiFunctionGraphNode,
   VideoAiIconNode,
+  VideoAiParametricGraphNode,
   VideoAiRenderableNode,
   VideoIconNode,
   VideoIconPrimitive,
   VideoNode,
+  VideoPrerenderNode,
   VideoTextNode,
 } from "@/lib/types/video";
 import { extractDisplayLatex, latexToIcon } from "@/lib/video/latex";
@@ -269,10 +272,10 @@ const resolveAiTextNode = (node: VideoTextNode): VideoNode => {
 // fully-resolved map ready for the Rust engine (elements-based icons).
 export const resolveAiSceneNodes = async (
   nodes: Record<string, VideoAiRenderableNode>
-): Promise<Record<string, VideoNode>> => {
+): Promise<Record<string, VideoPrerenderNode>> => {
   const entries = await Promise.all(
     Object.entries(nodes).map(
-      async ([id, node]): Promise<[string, VideoNode]> => {
+      async ([id, node]): Promise<[string, VideoPrerenderNode]> => {
         if (node.type === "equation") {
           return [id, resolveAiEquationNode(node)];
         }
@@ -283,6 +286,13 @@ export const resolveAiSceneNodes = async (
 
         if (node.type === "text") {
           return [id, resolveAiTextNode(node)];
+        }
+
+        if (node.type === "functionGraph" || node.type === "parametricGraph") {
+          return [
+            id,
+            node as VideoAiFunctionGraphNode | VideoAiParametricGraphNode,
+          ];
         }
 
         return [id, node];

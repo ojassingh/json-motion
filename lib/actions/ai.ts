@@ -13,6 +13,7 @@ import {
   DEFAULT_CANVAS_HEIGHT,
   DEFAULT_CANVAS_WIDTH,
 } from "@/lib/video/config";
+import { preComputeGraphNodes } from "@/lib/video/graph";
 import { resolveAiSceneNodes } from "@/lib/video/lucide";
 import { expandAiSceneMacros } from "@/lib/video/macros";
 import { videoDescriptionSchema } from "@/lib/video/schema";
@@ -40,7 +41,7 @@ export const convertAiOutputToVideoDescription = async (
     ...aiOutput,
     fps: DEFAULT_CANVAS_FPS,
     height: DEFAULT_CANVAS_HEIGHT,
-    scenes,
+    scenes: preComputeGraphNodes(scenes),
     width: DEFAULT_CANVAS_WIDTH,
   });
 };
