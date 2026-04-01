@@ -12,7 +12,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-use crate::shared::types::{
+use crate::scene::types::{
     ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine,
     ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedParametricGraph,
     ResolvedText,
@@ -793,7 +793,7 @@ impl WgpuBackend {
 
     fn cached_icon_geometry(
         &mut self,
-        icon: &crate::shared::types::ResolvedIcon,
+        icon: &crate::scene::types::ResolvedIcon,
     ) -> &CachedPathGeometry {
         let cache_key = hash_icon(icon);
         self.path_cache.entry(cache_key).or_insert_with(|| {
@@ -878,7 +878,7 @@ fn build_text_instances(
     text_instances
 }
 
-fn hash_icon(icon: &crate::shared::types::ResolvedIcon) -> u64 {
+fn hash_icon(icon: &crate::scene::types::ResolvedIcon) -> u64 {
     let mut hasher = DefaultHasher::new();
     icon.width.to_bits().hash(&mut hasher);
     icon.height.to_bits().hash(&mut hasher);
@@ -1464,7 +1464,7 @@ mod tests {
     use crate::schema::{
         IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap, TextAlign,
     };
-    use crate::shared::types::{
+    use crate::scene::types::{
         ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
         ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
         ResolvedParametricGraph, ResolvedRect, ResolvedText,

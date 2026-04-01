@@ -1,5 +1,5 @@
 use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive};
-use crate::shared::types::{ResolvedIcon, ResolvedNode};
+use crate::scene::types::{ResolvedIcon, ResolvedNode};
 use bytemuck::{Pod, Zeroable};
 use lyon::extra::parser::ParserOptions;
 use lyon::tessellation::{

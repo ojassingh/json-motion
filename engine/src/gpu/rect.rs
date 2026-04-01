@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::shared::types::{ResolvedNode, ResolvedRect};
+use crate::scene::types::{ResolvedNode, ResolvedRect};
 
 // ── Instance layout ───────────────────────────────────────────────────────────
 

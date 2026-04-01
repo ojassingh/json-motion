@@ -8,7 +8,7 @@ pub mod layout;
 pub mod parallel_encode;
 pub mod render;
 pub mod schema;
-pub mod shared;
+pub mod scene;
 pub mod text;
 
 #[cfg(test)]

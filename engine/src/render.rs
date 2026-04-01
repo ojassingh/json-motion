@@ -5,7 +5,7 @@ use skia_safe::{
 
 use crate::icon;
 use crate::schema::{LineCap, TextAlign};
-use crate::shared::types::{
+use crate::scene::types::{
     ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine,
     ResolvedNode, ResolvedNodeData, ResolvedParametricGraph, ResolvedRect, ResolvedText,
 };
@@ -466,7 +466,7 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap};
-    use crate::shared::types::{
+    use crate::scene::types::{
         ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
         ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
     };

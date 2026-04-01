@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use crate::gpu::WgpuBackend;
 use crate::render::FrameBuffer;
 #[cfg(feature = "gpu")]
-use crate::shared::types::ResolvedFrame;
+use crate::scene::types::ResolvedFrame;
 #[cfg(feature = "gpu")]
 use crate::text::TextMeasurer;
 

@@ -4,7 +4,7 @@ use crate::render::{apply_node_transform, make_paint};
 use crate::schema::{
     IconCirclePrimitive, IconLineCap, IconLineJoin, IconPrimitive, IconRectPrimitive,
 };
-use crate::shared::types::{ResolvedIcon, ResolvedNode};
+use crate::scene::types::{ResolvedIcon, ResolvedNode};
 
 pub(crate) fn draw_icon(canvas: &Canvas, node: &ResolvedNode, icon: &ResolvedIcon) {
     let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;

@@ -9,10 +9,10 @@ use crate::schema::{
     Anchor, ArrowEndpoint, ArrowPosition, IconLineCap, IconLineJoin, Node, NodeBase, SceneEntry,
     TextAlign, TimelineEvent, VideoDescription,
 };
-use crate::shared::consts::{
+use crate::scene::consts::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_SCENE_BG, DEFAULT_TEXT_COLOR,
 };
-use crate::shared::types::{
+use crate::scene::types::{
     ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
     ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedParametricGraph,
     ResolvedRect, ResolvedText,
@@ -1032,7 +1032,7 @@ mod tests {
         CircleNode, EventTarget, LineCap, LineNode, Node, NodeBase, RectNode, SceneEntry,
         TimelineEvent, VideoDescription,
     };
-    use crate::shared::types::ResolvedNodeData;
+    use crate::scene::types::ResolvedNodeData;
     use crate::text::SkiaTextMeasurer;
 
     #[test]
