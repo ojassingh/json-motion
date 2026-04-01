@@ -557,3 +557,13 @@
 - `cargo clippy --all-targets --locked -- -D warnings` in `engine/`
 - `cargo build --release` in `engine/`
 - `bun run build`
+
+---
+
+## Modal R2 Render Delivery
+
+- [ ] Add a production Modal render endpoint that renders with the Rust engine, uploads the MP4 to R2, and returns render metadata.
+- [ ] Add a lean Next.js render provider switch so `/api/render` uses Modal by default and local rendering only when configured.
+- [ ] Keep the frontend response contract stable so `video.url` continues to drive playback without UI churn.
+- [ ] Update focused render-route coverage for the provider switch and response contract.
+- [ ] Run targeted verification and document the final behavior.
