@@ -728,3 +728,81 @@ pub fn frame_render_hint(compiled: &CompiledVideo<'_>, absolute_frame: u32) -> F
         scene_cache_key: scene.render_cache_key,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+
+    use super::compile_video;
+    use crate::schema::{
+        EventTarget, Node, NodeBase, RectNode, SceneEntry, TimelineEvent, VideoDescription,
+    };
+    use crate::text::SkiaTextMeasurer;
+
+    #[test]
+    fn compile_video_should_interpolate_draw_progress_tracks() {
+        let mut nodes = IndexMap::new();
+        nodes.insert(
+            "rect".to_string(),
+            Node::Rect(RectNode {
+                base: NodeBase::default(),
+                width: 64.0,
+                height: 32.0,
+                fill: Some("#000000".to_string()),
+                stroke: None,
+                stroke_width: None,
+                corner_radius: None,
+            }),
+        );
+
+        let desc = VideoDescription {
+            fps: 30.0,
+            width: 320,
+            height: 180,
+            background: Some("#ffffff".to_string()),
+            scenes: vec![SceneEntry {
+                id: "scene-1".to_string(),
+                background: None,
+                duration: 30,
+                start_frame: 0,
+                nodes,
+                timeline: vec![TimelineEvent {
+                    target: EventTarget::Single("rect".to_string()),
+                    at: 0.0,
+                    dur: Some(1.0),
+                    ease: Some(crate::schema::Easing::EaseOut),
+                    action: None,
+                    opacity: None,
+                    x: None,
+                    y: None,
+                    dx: None,
+                    dy: None,
+                    width: None,
+                    height: None,
+                    rotate: None,
+                    scale: None,
+                    scale_x: None,
+                    scale_y: None,
+                    skew_x: None,
+                    skew_y: None,
+                    corner_radius: None,
+                    stroke_width: None,
+                    size: None,
+                    draw_progress: Some(1.0),
+                    fill: None,
+                    stroke: None,
+                    color: None,
+                }],
+            }],
+        };
+        let measurer = SkiaTextMeasurer::new();
+        let compiled = compile_video(&desc, &measurer).expect("video should compile");
+        let tracks = compiled.scenes[0]
+            .node_tracks
+            .get("rect")
+            .expect("rect tracks should exist");
+        let draw_progress = tracks.num("drawProgress", 0.0, 0.5);
+
+        assert!((draw_progress - 0.75).abs() < 1e-9);
+    }
+}
