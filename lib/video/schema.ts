@@ -37,6 +37,7 @@ export const videoEasingSchema = z.enum([
 ]);
 
 export const videoIconLineCapSchema = z.enum(["butt", "round", "square"]);
+export const videoLineCapSchema = videoIconLineCapSchema;
 export const videoIconLineJoinSchema = z.enum(["bevel", "miter", "round"]);
 export const videoArrowPositionSchema = z.enum([
   "above",
@@ -127,6 +128,17 @@ export const videoArrowNodeSchema = videoNodeBaseSchema
   })
   .strict();
 
+export const videoCircleNodeSchema = videoNodeBaseSchema
+  .extend({
+    drawProgress: z.number().min(0).max(1).optional(),
+    fill: videoHexColorSchema.optional(),
+    radius: pos,
+    stroke: videoHexColorSchema.optional(),
+    strokeWidth: nn.optional(),
+    type: z.literal("circle"),
+  })
+  .strict();
+
 export const videoTextNodeSchema = videoNodeBaseSchema
   .extend({
     color: videoHexColorSchema.optional(),
@@ -190,6 +202,20 @@ export const videoFunctionGraphNodeSchema = videoAiFunctionGraphNodeSchema
 export const videoParametricGraphNodeSchema = videoAiParametricGraphNodeSchema
   .extend({
     points: z.array(videoPointSchema),
+  })
+  .strict();
+
+export const videoLineNodeSchema = videoNodeBaseSchema
+  .extend({
+    cap: videoLineCapSchema.optional(),
+    drawProgress: z.number().min(0).max(1).optional(),
+    stroke: videoHexColorSchema.optional(),
+    strokeWidth: nn.optional(),
+    type: z.literal("line"),
+    x1: fin,
+    x2: fin,
+    y1: fin,
+    y2: fin,
   })
   .strict();
 
@@ -324,7 +350,9 @@ export const videoStackNodeSchema = videoNodeBaseSchema
 
 const videoRepeatTemplateSchema = z.union([
   videoArrowNodeSchema,
+  videoCircleNodeSchema,
   videoAiIconNodeSchema,
+  videoLineNodeSchema,
   videoRectNodeSchema,
   videoTextNodeSchema,
 ]);
@@ -349,9 +377,11 @@ export const videoRepeatNodeSchema = z
 export const videoNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
   videoArrowNodeSchema,
+  videoCircleNodeSchema,
   videoCenterNodeSchema,
   videoFunctionGraphNodeSchema,
   videoIconNodeSchema,
+  videoLineNodeSchema,
   videoParametricGraphNodeSchema,
   videoRectNodeSchema,
   videoStackNodeSchema,
@@ -364,10 +394,12 @@ export const videoNodeSchema = z.discriminatedUnion("type", [
 export const videoAiNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
   videoArrowNodeSchema,
+  videoCircleNodeSchema,
   videoCenterNodeSchema,
   videoAiEquationNodeSchema,
   videoAiFunctionGraphNodeSchema,
   videoAiIconNodeSchema,
+  videoLineNodeSchema,
   videoAiParametricGraphNodeSchema,
   videoRectNodeSchema,
   videoRepeatNodeSchema,
@@ -393,6 +425,7 @@ export const videoTimelineEventSchema = z
     fill: videoHexColorSchema.optional(),
     height: pos.optional(),
     opacity: fin.optional(),
+    radius: pos.optional(),
     rotate: fin.optional(),
     scale: fin.optional(),
     scaleX: fin.optional(),
@@ -404,7 +437,11 @@ export const videoTimelineEventSchema = z
     strokeWidth: nn.optional(),
     target: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
     width: pos.optional(),
+    x1: fin.optional(),
+    x2: fin.optional(),
     x: fin.optional(),
+    y1: fin.optional(),
+    y2: fin.optional(),
     y: fin.optional(),
   })
   .strict();

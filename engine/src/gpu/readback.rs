@@ -61,11 +61,7 @@ impl ReadbackSlot {
         );
     }
 
-    fn map_and_copy(
-        &self,
-        device: &wgpu::Device,
-        target: &mut FrameBuffer,
-    ) -> Result<(), String> {
+    fn map_and_copy(&self, device: &wgpu::Device, target: &mut FrameBuffer) -> Result<(), String> {
         let slice = self.buffer.slice(..);
         let (sender, receiver) = std::sync::mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {

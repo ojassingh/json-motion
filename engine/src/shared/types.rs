@@ -1,4 +1,12 @@
-use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive, TextAlign};
+use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive, LineCap, TextAlign};
+
+pub struct ResolvedCircle {
+    pub radius: f64,
+    pub fill: Option<(u8, u8, u8)>,
+    pub stroke: Option<(u8, u8, u8)>,
+    pub stroke_width: f64,
+    pub draw_progress: f64,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResolvedNodeBatchKind {
@@ -48,6 +56,17 @@ pub struct ResolvedFunctionGraph {
     pub y_range: Option<[f64; 2]>,
 }
 
+pub struct ResolvedLine {
+    pub x1: f64,
+    pub y1: f64,
+    pub x2: f64,
+    pub y2: f64,
+    pub stroke: (u8, u8, u8),
+    pub stroke_width: f64,
+    pub cap: LineCap,
+    pub draw_progress: f64,
+}
+
 pub struct ResolvedIcon {
     pub width: f64,
     pub height: f64,
@@ -73,8 +92,10 @@ pub struct ResolvedParametricGraph {
 
 pub enum ResolvedNodeData {
     Arrow(ResolvedArrow),
+    Circle(ResolvedCircle),
     FunctionGraph(ResolvedFunctionGraph),
     Icon(ResolvedIcon),
+    Line(ResolvedLine),
     ParametricGraph(ResolvedParametricGraph),
     Rect(ResolvedRect),
     Text(ResolvedText),
