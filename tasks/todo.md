@@ -1,8 +1,8 @@
-- [ ] Restructure the GPU export path so rendering and encoding overlap instead of serializing on one thread.
-- [ ] Replace multi-GPU-worker export with a single-GPU producer and CPU encode workers only when it improves wall time.
-- [ ] Add explicit fast paths only where they clearly pay off: static-frame reuse, startup overlap, and codec-friendly frame handling.
-- [ ] Consolidate benchmark scripts into a single benchmark directory and extend them to measure the new pipeline shape.
-- [ ] Run release benchmarks plus targeted correctness checks, document results, create many small conventional commits, push the branch, and open a PR.
+- [x] Restructure the GPU export path so rendering and encoding overlap instead of serializing on one thread.
+- [x] Replace multi-GPU-worker export with a single-GPU producer and CPU encode workers only when it improves wall time.
+- [x] Add only the fast paths that clearly paid off: static-scene frame reuse, a small-clip inline GPU path, and single-init GPU startup.
+- [x] Consolidate benchmark entrypoints into a single benchmark directory and extend the harness with case filtering for targeted reruns.
+- [x] Run release benchmarks plus targeted correctness checks, document results, create many small conventional commits, push the branch, and open a PR.
 
 ---
 
@@ -16,15 +16,37 @@
 
 ### Review
 
-- Pending implementation.
+- Replaced the old “GPU render plus serial encode on one thread” route with a lean split: one `WgpuBackend` renders frames, bounded CPU encode workers consume completed RGBA frames, and chunk files are still remuxed with stream copy at the end.
+- Kept the architecture narrow by removing the obsolete single-thread GPU export branch, but reintroduced one explicit inline fast path for short clips (`<= 240` frames) because benchmarks showed worker orchestration overhead was not worth it there.
+- Added one scene-level reuse hint from the animation compiler so timeline-free scenes can replay a cached first GPU frame instead of rerendering identical content thousands of times.
+- Removed the extra `wgpu` initialization pass from the GPU entry path so short clips do not pay the backend startup cost twice.
+- Centralized benchmark entrypoints under `benchmarks/` and added `BENCH_CASE_FILTER` so long-path tuning can rerun only the cases that matter.
 
 ### Verification
 
-- Pending implementation.
+- `cargo test --release --features gpu` in `engine/`
+- `cargo clippy --release --features gpu --all-targets -- -D warnings` in `engine/`
+- `python3 -m py_compile benchmarks/modal_gpu_verify.py benchmarks/modal_gpu_bench_client.py`
+- `BENCH_ITERATIONS=1 BENCH_PARALLEL_WORKERS=1 BENCH_CASE_FILTER=rect-stress,text-heavy,icon-dense,math-complex bun scripts/benchmark-engine.ts`
+- `BENCH_ITERATIONS=1 BENCH_PARALLEL_WORKERS=1 BENCH_CASE_FILTER=mixed-static-long,rect-animate-long,long-form bun scripts/benchmark-engine.ts`
+- `BENCH_ITERATIONS=1 BENCH_PARALLEL_WORKERS=4 BENCH_CASE_FILTER=mixed-static-long,rect-animate-long,long-form bun scripts/benchmark-engine.ts`
+- `BENCH_ITERATIONS=1 BENCH_PARALLEL_WORKERS=1 bun run bench:engine` with targeted case filters for entrypoint sanity checks
 
 ### Result
 
-- Pending implementation.
+- Final single-worker GPU long-form numbers on the finished branch:
+- `mixed-static-long`: GPU wall `18372.99ms` vs CPU wall `32570.81ms` (`1.77x` faster)
+- `rect-animate-long`: GPU wall `19800.93ms` vs CPU wall `47519.58ms` (`2.40x` faster)
+- `long-form`: GPU wall `18503.75ms` vs CPU wall `35027.21ms` (`1.89x` faster)
+- Compared with the pre-change GPU baseline from `main`, the default one-worker GPU path materially improved:
+- `mixed-static-long`: `21939.23ms` -> `18372.99ms` (`-16.3%`)
+- `rect-animate-long`: `31589.65ms` -> `19800.93ms` (`-37.3%`)
+- `long-form`: `39351.52ms` -> `18503.75ms` (`-53.0%`)
+- Final short/medium spot checks on the finished branch:
+- `text-heavy`: GPU wall `525.50ms` vs CPU wall `546.93ms`
+- `icon-dense`: GPU wall `519.13ms` vs CPU wall `672.58ms`
+- `math-complex`: GPU wall `665.48ms` vs CPU wall `1169.36ms`
+- `rect-stress` remains a known outlier where the GPU path is still not the fastest locally (`987.71ms` GPU vs `811.72ms` CPU), and its GPU pixel-diff threshold was already failing before this pass.
 
 ---
 
