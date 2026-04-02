@@ -91,9 +91,6 @@ fn style_for_node(node: &Node, is_root: bool, measurer: &impl TextMeasurer) -> S
         Node::Rect(node) => {
             style.size = fixed_size(node.width, node.height);
         }
-        Node::Arrow(_) => {
-            style.size = fixed_size(0.0, 0.0);
-        }
         Node::Circle(node) => {
             let diameter = node.radius * 2.0;
             style.size = fixed_size(diameter, diameter);
@@ -105,7 +102,14 @@ fn style_for_node(node: &Node, is_root: bool, measurer: &impl TextMeasurer) -> S
             style.size = fixed_size(node.width, node.height);
         }
         Node::Line(node) => {
-            style.size = fixed_size((node.x2 - node.x1).abs(), (node.y2 - node.y1).abs());
+            style.size = if node.from.is_some() || node.to.is_some() {
+                fixed_size(0.0, 0.0)
+            } else {
+                fixed_size(
+                    (node.x2.unwrap_or(0.0) - node.x1.unwrap_or(0.0)).abs(),
+                    (node.y2.unwrap_or(0.0) - node.y1.unwrap_or(0.0)).abs(),
+                )
+            };
         }
         Node::ParametricGraph(node) => {
             style.size = fixed_size(node.width, node.height);

@@ -1,4 +1,4 @@
-use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive, LineCap, TextAlign};
+use crate::schema::{IconLineCap, IconLineJoin, IconPrimitive, LineCap, LineHead, TextAlign};
 
 pub struct ResolvedCircle {
     pub radius: f64,
@@ -33,16 +33,6 @@ pub struct ResolvedText {
     pub text_align: TextAlign,
 }
 
-pub struct ResolvedArrow {
-    pub width: f64,
-    pub height: f64,
-    pub start: (f64, f64),
-    pub end: (f64, f64),
-    pub stroke: (u8, u8, u8),
-    pub stroke_width: f64,
-    pub head_size: f64,
-}
-
 pub struct ResolvedFunctionGraph {
     pub width: f64,
     pub height: f64,
@@ -65,6 +55,8 @@ pub struct ResolvedLine {
     pub stroke_width: f64,
     pub cap: LineCap,
     pub draw_progress: f64,
+    pub head: LineHead,
+    pub head_size: f64,
 }
 
 pub struct ResolvedIcon {
@@ -91,7 +83,6 @@ pub struct ResolvedParametricGraph {
 }
 
 pub enum ResolvedNodeData {
-    Arrow(ResolvedArrow),
     Circle(ResolvedCircle),
     FunctionGraph(ResolvedFunctionGraph),
     Icon(ResolvedIcon),

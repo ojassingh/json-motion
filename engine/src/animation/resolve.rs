@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use crate::color;
 use crate::layout;
 use crate::schema::{
-    Anchor, ArrowEndpoint, ArrowPosition, IconLineCap, IconLineJoin, Node, NodeBase, TextAlign,
+    Anchor, IconLineCap, IconLineJoin, LineEndpoint, LineHead, Node, NodeBase, TextAlign,
 };
 use crate::scene::consts::{DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT_MULT, DEFAULT_TEXT_COLOR};
 use crate::scene::types::{
-    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
+    ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
     ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData, ResolvedParametricGraph,
     ResolvedRect, ResolvedText,
 };
@@ -16,9 +16,7 @@ use crate::text::TextMeasurer;
 use super::compile::{scene_for_frame, CompiledVideo, NodeTracks};
 use super::snapshot::snapshot_nodes;
 
-const DEFAULT_ARROW_GAP: f64 = 12.0;
-const DEFAULT_ARROW_HEAD_SIZE: f64 = 12.0;
-const DEFAULT_ARROW_LENGTH: f64 = 80.0;
+const DEFAULT_LINE_HEAD_SIZE: f64 = 12.0;
 
 fn resolve_common(
     base: &NodeBase,
@@ -72,17 +70,17 @@ fn layout_anchor_point(layout_box: layout::LayoutBox, anchor: Anchor) -> (f64, f
     }
 }
 
-fn resolve_arrow_endpoint(
-    endpoint: &ArrowEndpoint,
+fn resolve_line_endpoint(
+    endpoint: &LineEndpoint,
     layout_boxes: &HashMap<String, layout::LayoutBox>,
 ) -> Result<(f64, f64), String> {
     match endpoint {
-        ArrowEndpoint::Point(point) => Ok((point.x, point.y)),
-        ArrowEndpoint::NodeRef(node_ref) => {
+        LineEndpoint::Point(point) => Ok((point.x, point.y)),
+        LineEndpoint::NodeRef(node_ref) => {
             let target_box = layout_boxes
                 .get(&node_ref.node)
                 .copied()
-                .ok_or_else(|| format!("missing arrow endpoint node {}", node_ref.node))?;
+                .ok_or_else(|| format!("missing line endpoint node {}", node_ref.node))?;
             Ok(layout_anchor_point(
                 target_box,
                 node_ref.anchor.unwrap_or(Anchor::Center),
@@ -91,34 +89,8 @@ fn resolve_arrow_endpoint(
     }
 }
 
-fn resolve_arrow_target_points(
-    target: &str,
-    position: ArrowPosition,
-    gap: f64,
-    length: f64,
-    layout_boxes: &HashMap<String, layout::LayoutBox>,
-) -> Result<((f64, f64), (f64, f64)), String> {
-    let target_box = layout_boxes
-        .get(target)
-        .copied()
-        .ok_or_else(|| format!("missing arrow target node {target}"))?;
-    let tip = match position {
-        ArrowPosition::Above => layout_anchor_point(target_box, Anchor::TopCenter),
-        ArrowPosition::Below => layout_anchor_point(target_box, Anchor::BottomCenter),
-        ArrowPosition::Left => layout_anchor_point(target_box, Anchor::CenterLeft),
-        ArrowPosition::Right => layout_anchor_point(target_box, Anchor::CenterRight),
-    };
-    let tail = match position {
-        ArrowPosition::Above => (tip.0, tip.1 - gap - length),
-        ArrowPosition::Below => (tip.0, tip.1 + gap + length),
-        ArrowPosition::Left => (tip.0 - gap - length, tip.1),
-        ArrowPosition::Right => (tip.0 + gap + length, tip.1),
-    };
-    Ok((tail, tip))
-}
-
-fn resolve_arrow_node(
-    arrow: &crate::schema::ArrowNode,
+fn resolve_line_node(
+    line: &crate::schema::LineNode,
     batch_kind: ResolvedNodeBatchKind,
     tracks: &NodeTracks,
     layout_box: layout::LayoutBox,
@@ -126,25 +98,28 @@ fn resolve_arrow_node(
     t: f64,
     layout_boxes: &HashMap<String, layout::LayoutBox>,
 ) -> Result<ResolvedNode, String> {
-    let uses_target_mode = arrow.target.is_some() || arrow.position.is_some();
-    let uses_endpoint_mode = arrow.from.is_some() || arrow.to.is_some();
-    let (start, end) = if uses_target_mode && uses_endpoint_mode {
-        return Err("arrow cannot mix target placement with explicit endpoints".to_string());
-    } else if let (Some(target), Some(position)) = (&arrow.target, arrow.position) {
-        resolve_arrow_target_points(
-            target,
-            position,
-            arrow.gap.unwrap_or(DEFAULT_ARROW_GAP),
-            arrow.length.unwrap_or(DEFAULT_ARROW_LENGTH),
-            layout_boxes,
-        )?
-    } else if let (Some(from), Some(to)) = (&arrow.from, &arrow.to) {
+    let uses_coordinate_mode =
+        line.x1.is_some() || line.y1.is_some() || line.x2.is_some() || line.y2.is_some();
+    let uses_endpoint_mode = line.from.is_some() || line.to.is_some();
+    let (start, end) = if uses_coordinate_mode && uses_endpoint_mode {
+        return Err("line cannot mix absolute coordinates with from/to endpoints".to_string());
+    } else if let (Some(from), Some(to)) = (&line.from, &line.to) {
         (
-            resolve_arrow_endpoint(from, layout_boxes)?,
-            resolve_arrow_endpoint(to, layout_boxes)?,
+            resolve_line_endpoint(from, layout_boxes)?,
+            resolve_line_endpoint(to, layout_boxes)?,
         )
+    } else if uses_endpoint_mode {
+        return Err("line endpoint mode requires both from and to".to_string());
+    } else if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (line.x1, line.y1, line.x2, line.y2)
+    {
+        (
+            (tracks.num("x1", x1, t), tracks.num("y1", y1, t)),
+            (tracks.num("x2", x2, t), tracks.num("y2", y2, t)),
+        )
+    } else if uses_coordinate_mode {
+        return Err("line absolute mode requires x1, y1, x2, and y2".to_string());
     } else {
-        return Err("arrow must define either target placement or explicit endpoints".to_string());
+        return Err("line must define either x1/y1/x2/y2 or both from and to".to_string());
     };
 
     let start = (start.0 + layout_box.x, start.1 + layout_box.y);
@@ -156,13 +131,13 @@ fn resolve_arrow_node(
     let stroke_hex = tracks
         .color(
             "stroke",
-            Some(arrow.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
+            Some(line.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
             t,
         )
         .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
 
     Ok(resolve_common(
-        &arrow.base,
+        &line.base,
         batch_kind,
         tracks,
         layout::LayoutBox {
@@ -173,14 +148,19 @@ fn resolve_arrow_node(
         },
         source_index,
         t,
-        ResolvedNodeData::Arrow(ResolvedArrow {
-            width: max_x - min_x,
-            height: max_y - min_y,
-            start: (start.0 - min_x, start.1 - min_y),
-            end: (end.0 - min_x, end.1 - min_y),
+        ResolvedNodeData::Line(ResolvedLine {
+            x1: start.0 - min_x,
+            y1: start.1 - min_y,
+            x2: end.0 - min_x,
+            y2: end.1 - min_y,
             stroke: color::parse_hex(&stroke_hex),
-            stroke_width: tracks.num("strokeWidth", arrow.stroke_width.unwrap_or(2.0), t),
-            head_size: arrow.head_size.unwrap_or(DEFAULT_ARROW_HEAD_SIZE),
+            stroke_width: tracks.num("strokeWidth", line.stroke_width.unwrap_or(2.0), t),
+            cap: line.cap.unwrap_or(crate::schema::LineCap::Round),
+            draw_progress: tracks
+                .num("drawProgress", line.draw_progress.unwrap_or(1.0), t)
+                .clamp(0.0, 1.0),
+            head: line.head.unwrap_or(LineHead::None),
+            head_size: line.head_size.unwrap_or(DEFAULT_LINE_HEAD_SIZE),
         }),
     ))
 }
@@ -256,55 +236,6 @@ fn resolve_function_graph_node(
     )
 }
 
-fn resolve_line_node(
-    line: &crate::schema::LineNode,
-    batch_kind: ResolvedNodeBatchKind,
-    tracks: &NodeTracks,
-    layout_box: layout::LayoutBox,
-    source_index: usize,
-    t: f64,
-) -> ResolvedNode {
-    let x1 = tracks.num("x1", line.x1, t);
-    let y1 = tracks.num("y1", line.y1, t);
-    let x2 = tracks.num("x2", line.x2, t);
-    let y2 = tracks.num("y2", line.y2, t);
-    let min_x = x1.min(x2);
-    let min_y = y1.min(y2);
-    let stroke_hex = tracks
-        .color(
-            "stroke",
-            Some(line.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
-            t,
-        )
-        .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_string());
-
-    resolve_common(
-        &line.base,
-        batch_kind,
-        tracks,
-        layout::LayoutBox {
-            x: layout_box.x + min_x,
-            y: layout_box.y + min_y,
-            width: layout_box.width,
-            height: layout_box.height,
-        },
-        source_index,
-        t,
-        ResolvedNodeData::Line(ResolvedLine {
-            x1: x1 - min_x,
-            y1: y1 - min_y,
-            x2: x2 - min_x,
-            y2: y2 - min_y,
-            stroke: color::parse_hex(&stroke_hex),
-            stroke_width: tracks.num("strokeWidth", line.stroke_width.unwrap_or(2.0), t),
-            cap: line.cap.unwrap_or(crate::schema::LineCap::Round),
-            draw_progress: tracks
-                .num("drawProgress", line.draw_progress.unwrap_or(1.0), t)
-                .clamp(0.0, 1.0),
-        }),
-    )
-}
-
 fn resolve_parametric_graph_node(
     graph: &crate::schema::ParametricGraphNode,
     batch_kind: ResolvedNodeBatchKind,
@@ -349,15 +280,6 @@ fn resolve_node(
     layout_boxes: &HashMap<String, layout::LayoutBox>,
 ) -> Result<Option<ResolvedNode>, String> {
     match node {
-        Node::Arrow(arrow) => Ok(Some(resolve_arrow_node(
-            arrow,
-            batch_kind,
-            tracks,
-            layout_box,
-            source_index,
-            t,
-            layout_boxes,
-        )?)),
         Node::Circle(circle) => Ok(Some(resolve_circle_node(
             circle,
             batch_kind,
@@ -414,7 +336,8 @@ fn resolve_node(
             layout_box,
             source_index,
             t,
-        ))),
+            layout_boxes,
+        )?)),
         Node::ParametricGraph(graph) => Ok(Some(resolve_parametric_graph_node(
             graph,
             batch_kind,
@@ -561,8 +484,8 @@ mod tests {
     use super::resolve_frame_fast;
     use crate::animation::compile::compile_video;
     use crate::schema::{
-        CircleNode, EventTarget, LineCap, LineNode, Node, NodeBase, SceneEntry, TimelineEvent,
-        VideoDescription,
+        CircleNode, EventTarget, LineCap, LineHead, LineNode, Node, NodeBase, SceneEntry,
+        TimelineEvent, VideoDescription,
     };
     use crate::scene::types::ResolvedNodeData;
     use crate::text::SkiaTextMeasurer;
@@ -593,14 +516,18 @@ mod tests {
                     y: Some(80.0),
                     ..NodeBase::default()
                 },
-                x1: 0.0,
-                y1: 0.0,
-                x2: 80.0,
-                y2: 0.0,
+                x1: Some(0.0),
+                y1: Some(0.0),
+                x2: Some(80.0),
+                y2: Some(0.0),
+                from: None,
+                to: None,
                 stroke: Some("#f8fafc".to_string()),
                 stroke_width: Some(2.0),
                 cap: Some(LineCap::Round),
                 draw_progress: Some(0.0),
+                head: Some(LineHead::End),
+                head_size: Some(10.0),
             }),
         );
 
