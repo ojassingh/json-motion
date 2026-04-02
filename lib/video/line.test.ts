@@ -19,29 +19,37 @@ const baseDescription = {
   width: 320,
 };
 
-describe("video arrows", () => {
-  test("accepts an arrow that points at a node from above", () => {
+describe("video lines", () => {
+  test("accepts a line that connects nodes with an end arrowhead", () => {
     const result = videoDescriptionSchema.safeParse({
       ...baseDescription,
       scenes: [
         {
           ...baseDescription.scenes[0],
           nodes: {
-            arrow: {
-              headSize: 10,
-              position: "above",
-              stroke: "#f8fafc",
-              strokeWidth: 4,
-              target: "box",
-              type: "arrow",
-            },
             box: {
               fill: "#38bdf8",
               height: 48,
               type: "rect",
               width: 96,
               x: 112,
-              y: 60,
+              y: 72,
+            },
+            connector: {
+              from: { anchor: "bottom-center", node: "label" },
+              head: "end",
+              headSize: 10,
+              stroke: "#f8fafc",
+              strokeWidth: 4,
+              to: { anchor: "top-center", node: "box" },
+              type: "line",
+            },
+            label: {
+              size: 24,
+              text: "Input",
+              type: "text",
+              x: 128,
+              y: 24,
             },
           },
         },
@@ -51,20 +59,13 @@ describe("video arrows", () => {
     expect(result.success).toBeTrue();
   });
 
-  test("rejects arrows that mix target placement with explicit endpoints", () => {
+  test("rejects lines that mix absolute coordinates with explicit endpoints", () => {
     const result = videoDescriptionSchema.safeParse({
       ...baseDescription,
       scenes: [
         {
           ...baseDescription.scenes[0],
           nodes: {
-            arrow: {
-              from: { x: 24, y: 24 },
-              position: "left",
-              target: "box",
-              to: { x: 96, y: 48 },
-              type: "arrow",
-            },
             box: {
               fill: "#38bdf8",
               height: 48,
@@ -72,6 +73,17 @@ describe("video arrows", () => {
               width: 96,
               x: 112,
               y: 60,
+            },
+            connector: {
+              from: { x: 24, y: 24 },
+              stroke: "#f8fafc",
+              strokeWidth: 3,
+              to: { anchor: "center-left", node: "box" },
+              type: "line",
+              x1: 0,
+              x2: 96,
+              y1: 0,
+              y2: 48,
             },
           },
         },
@@ -85,7 +97,7 @@ describe("video arrows", () => {
     expect(result.error.issues[0]?.message).toContain("cannot mix");
   });
 
-  test("expands repeated arrows and fans timeline targets out to copies", async () => {
+  test("expands repeated lines and fans timeline targets out to copies", async () => {
     const description = await convertAiOutputToVideoDescription({
       scenes: [
         {
@@ -98,11 +110,15 @@ describe("video arrows", () => {
               rowStep: { x: 20, y: 10 },
               rows: 2,
               template: {
-                from: { x: 0, y: 0 },
+                head: "end",
+                headSize: 8,
                 stroke: "#f8fafc",
                 strokeWidth: 3,
-                to: { x: 24, y: 0 },
-                type: "arrow",
+                type: "line",
+                x1: 0,
+                x2: 24,
+                y1: 0,
+                y2: 0,
               },
               type: "repeat",
             },
@@ -131,12 +147,13 @@ describe("video arrows", () => {
       "diagonal_r1_c1",
     ]);
 
-    const repeatedArrow = scene.nodes.diagonal_r1_c1;
-    if (!repeatedArrow || repeatedArrow.type !== "arrow") {
-      throw new Error("expected repeated arrow node");
+    const repeatedLine = scene.nodes.diagonal_r1_c1;
+    if (!repeatedLine || repeatedLine.type !== "line") {
+      throw new Error("expected repeated line node");
     }
-    expect(repeatedArrow.x).toBe(50);
-    expect(repeatedArrow.y).toBe(10);
+    expect(repeatedLine.head).toBe("end");
+    expect(repeatedLine.x).toBe(50);
+    expect(repeatedLine.y).toBe(10);
 
     const event = scene.timeline?.[0];
     expect(event?.target).toEqual([
