@@ -39,12 +39,7 @@ export const videoEasingSchema = z.enum([
 export const videoIconLineCapSchema = z.enum(["butt", "round", "square"]);
 export const videoLineCapSchema = videoIconLineCapSchema;
 export const videoIconLineJoinSchema = z.enum(["bevel", "miter", "round"]);
-export const videoArrowPositionSchema = z.enum([
-  "above",
-  "below",
-  "left",
-  "right",
-]);
+export const videoLineHeadSchema = z.enum(["none", "start", "end", "both"]);
 export const videoTextAlignSchema = z.enum(["center", "left", "right"]);
 export const videoStackDirectionSchema = z.enum(["horizontal", "vertical"]);
 export const videoStackAlignSchema = z.enum(["start", "center", "end"]);
@@ -101,32 +96,71 @@ export const videoVectorSchema = z
     message: "Provide at least one axis.",
   });
 
-export const videoArrowEndpointRefSchema = z
+export const videoLineEndpointRefSchema = z
   .object({
     anchor: videoAnchorSchema.optional(),
     node: z.string().trim().min(1),
   })
   .strict();
 
-export const videoArrowEndpointSchema = z.union([
+export const videoLineEndpointSchema = z.union([
   videoPointSchema,
-  videoArrowEndpointRefSchema,
+  videoLineEndpointRefSchema,
 ]);
 
-export const videoArrowNodeSchema = videoNodeBaseSchema
+export const videoLineNodeSchema = videoNodeBaseSchema
   .extend({
-    from: videoArrowEndpointSchema.optional(),
-    gap: nn.optional(),
+    cap: videoLineCapSchema.optional(),
+    drawProgress: z.number().min(0).max(1).optional(),
+    from: videoLineEndpointSchema.optional(),
+    head: videoLineHeadSchema.optional(),
     headSize: pos.optional(),
-    length: pos.optional(),
-    position: videoArrowPositionSchema.optional(),
     stroke: videoHexColorSchema.optional(),
     strokeWidth: nn.optional(),
-    target: z.string().trim().min(1).optional(),
-    to: videoArrowEndpointSchema.optional(),
-    type: z.literal("arrow"),
+    to: videoLineEndpointSchema.optional(),
+    type: z.literal("line"),
+    x1: fin.optional(),
+    x2: fin.optional(),
+    y1: fin.optional(),
+    y2: fin.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((line, ctx) => {
+    const usesCoordinateMode =
+      line.x1 != null || line.y1 != null || line.x2 != null || line.y2 != null;
+    const usesEndpointMode = line.from != null || line.to != null;
+    if (!(usesCoordinateMode || usesEndpointMode)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Line must define either `x1`/`y1`/`x2`/`y2` or both `from` and `to`.",
+      });
+      return;
+    }
+    if (usesCoordinateMode && usesEndpointMode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Line cannot mix absolute coordinates with `from`/`to` endpoints.",
+      });
+    }
+    if (
+      usesCoordinateMode &&
+      (line.x1 == null || line.y1 == null || line.x2 == null || line.y2 == null)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Line absolute mode requires `x1`, `y1`, `x2`, and `y2` together.",
+      });
+    }
+    if (usesEndpointMode && !(line.from && line.to)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Line endpoint mode requires both `from` and `to`.",
+      });
+    }
+  });
 
 export const videoCircleNodeSchema = videoNodeBaseSchema
   .extend({
@@ -202,20 +236,6 @@ export const videoFunctionGraphNodeSchema = videoAiFunctionGraphNodeSchema
 export const videoParametricGraphNodeSchema = videoAiParametricGraphNodeSchema
   .extend({
     points: z.array(videoPointSchema),
-  })
-  .strict();
-
-export const videoLineNodeSchema = videoNodeBaseSchema
-  .extend({
-    cap: videoLineCapSchema.optional(),
-    drawProgress: z.number().min(0).max(1).optional(),
-    stroke: videoHexColorSchema.optional(),
-    strokeWidth: nn.optional(),
-    type: z.literal("line"),
-    x1: fin,
-    x2: fin,
-    y1: fin,
-    y2: fin,
   })
   .strict();
 
@@ -349,7 +369,6 @@ export const videoStackNodeSchema = videoNodeBaseSchema
   .strict();
 
 const videoRepeatTemplateSchema = z.union([
-  videoArrowNodeSchema,
   videoCircleNodeSchema,
   videoAiIconNodeSchema,
   videoLineNodeSchema,
@@ -376,7 +395,6 @@ export const videoRepeatNodeSchema = z
 // Engine node union: all types with fully-resolved payloads.
 export const videoNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
-  videoArrowNodeSchema,
   videoCircleNodeSchema,
   videoCenterNodeSchema,
   videoFunctionGraphNodeSchema,
@@ -393,7 +411,6 @@ export const videoNodeSchema = z.discriminatedUnion("type", [
 // serialising to Rust.
 export const videoAiNodeSchema = z.discriminatedUnion("type", [
   videoAlignNodeSchema,
-  videoArrowNodeSchema,
   videoCircleNodeSchema,
   videoCenterNodeSchema,
   videoAiEquationNodeSchema,
