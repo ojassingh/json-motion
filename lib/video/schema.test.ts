@@ -44,7 +44,7 @@ describe("videoDescriptionSchema", () => {
     expect(result.error.issues.length).toBeGreaterThan(0);
   });
 
-  test("accepts circle and line nodes", () => {
+  test("accepts circle and absolute line nodes", () => {
     const result = videoDescriptionSchema.safeParse({
       ...baseDescription,
       scenes: [
@@ -71,6 +71,45 @@ describe("videoDescriptionSchema", () => {
               type: "circle",
               x: 80,
               y: 40,
+            },
+          },
+        },
+      ],
+    });
+
+    expect(result.success).toBeTrue();
+  });
+
+  test("accepts endpoint-based lines with arrowheads", () => {
+    const result = videoDescriptionSchema.safeParse({
+      ...baseDescription,
+      scenes: [
+        {
+          ...baseDescription.scenes[0],
+          nodes: {
+            box: {
+              fill: "#38bdf8",
+              height: 48,
+              type: "rect",
+              width: 96,
+              x: 112,
+              y: 84,
+            },
+            connector: {
+              from: { anchor: "bottom-center", node: "label" },
+              head: "end",
+              headSize: 10,
+              stroke: "#f8fafc",
+              strokeWidth: 4,
+              to: { anchor: "top-center", node: "box" },
+              type: "line",
+            },
+            label: {
+              size: 24,
+              text: "Input",
+              type: "text",
+              x: 120,
+              y: 24,
             },
           },
         },

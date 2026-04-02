@@ -117,7 +117,7 @@ const validateTimelineTargets = (
   return issues;
 };
 
-const validateArrowNodes = (
+const validateLineNodes = (
   scene: VideoScene,
   basePath: Array<number | string>
 ): VideoValidationIssue[] => {
@@ -128,7 +128,7 @@ const validateArrowNodes = (
   };
 
   const validateEndpointRef = (
-    arrowId: string,
+    lineId: string,
     endpointName: "from" | "to",
     endpoint: unknown
   ): void => {
@@ -138,38 +138,37 @@ const validateArrowNodes = (
     const ref = endpoint as { node: string };
     if (!nodeIds.has(ref.node)) {
       pushIssue(
-        `Arrow "${arrowId}" references non-existent endpoint node "${ref.node}".`,
-        [...basePath, "nodes", arrowId, endpointName, "node"]
+        `Line "${lineId}" references non-existent endpoint node "${ref.node}".`,
+        [...basePath, "nodes", lineId, endpointName, "node"]
       );
     }
   };
 
-  const validateArrowNode = (
+  const validateLineNode = (
     id: string,
-    node: Extract<VideoScene["nodes"][string], { type: "arrow" }>
+    node: Extract<VideoScene["nodes"][string], { type: "line" }>
   ): void => {
-    const usesTargetMode = node.target != null || node.position != null;
+    const usesCoordinateMode =
+      node.x1 != null || node.y1 != null || node.x2 != null || node.y2 != null;
     const usesEndpointMode = node.from != null || node.to != null;
     const nodePath = [...basePath, "nodes", id];
-    const validateTargetMode = (): void => {
-      if (!(node.target && node.position)) {
+    const validateCoordinateMode = (): void => {
+      if (
+        node.x1 == null ||
+        node.y1 == null ||
+        node.x2 == null ||
+        node.y2 == null
+      ) {
         pushIssue(
-          `Arrow "${id}" must provide both \`target\` and \`position\` when using target-based placement.`,
+          `Line "${id}" must provide \`x1\`, \`y1\`, \`x2\`, and \`y2\` when using absolute coordinates.`,
           nodePath
-        );
-        return;
-      }
-      if (!nodeIds.has(node.target)) {
-        pushIssue(
-          `Arrow "${id}" references non-existent target "${node.target}".`,
-          [...nodePath, "target"]
         );
       }
     };
     const validateEndpointMode = (): void => {
       if (!(node.from && node.to)) {
         pushIssue(
-          `Arrow "${id}" must provide both \`from\` and \`to\` when using endpoint placement.`,
+          `Line "${id}" must provide both \`from\` and \`to\` when using endpoint placement.`,
           nodePath
         );
       }
@@ -177,23 +176,23 @@ const validateArrowNodes = (
       validateEndpointRef(id, "to", node.to);
     };
 
-    if (!(usesTargetMode || usesEndpointMode)) {
+    if (!(usesCoordinateMode || usesEndpointMode)) {
       pushIssue(
-        `Arrow "${id}" must define either \`target\` + \`position\` or both \`from\` and \`to\`.`,
+        `Line "${id}" must define either absolute coordinates or both \`from\` and \`to\`.`,
         nodePath
       );
       return;
     }
 
-    if (usesTargetMode && usesEndpointMode) {
+    if (usesCoordinateMode && usesEndpointMode) {
       pushIssue(
-        `Arrow "${id}" cannot mix \`target\`/\`position\` placement with \`from\`/\`to\` endpoints.`,
+        `Line "${id}" cannot mix absolute coordinates with \`from\`/\`to\` endpoints.`,
         nodePath
       );
     }
 
-    if (usesTargetMode) {
-      validateTargetMode();
+    if (usesCoordinateMode) {
+      validateCoordinateMode();
     }
 
     if (usesEndpointMode) {
@@ -202,8 +201,8 @@ const validateArrowNodes = (
   };
 
   for (const [id, node] of Object.entries(scene.nodes)) {
-    if (node.type === "arrow") {
-      validateArrowNode(id, node);
+    if (node.type === "line") {
+      validateLineNode(id, node);
     }
   }
 
@@ -228,7 +227,7 @@ export const collectVideoValidationIssues = (
     previousSceneEnd = scene.startFrame + scene.duration - 1;
     const basePath = ["scenes", i];
     issues.push(...validateSceneTree(scene, basePath));
-    issues.push(...validateArrowNodes(scene, basePath));
+    issues.push(...validateLineNodes(scene, basePath));
     issues.push(...validateTimelineTargets(scene, basePath));
   }
 

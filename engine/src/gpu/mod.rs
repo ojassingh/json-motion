@@ -360,12 +360,12 @@ impl WgpuBackend {
 #[cfg(test)]
 mod tests {
     use super::WgpuBackend;
-    use crate::render::CpuSkiaBackend;
+    use crate::render::{CpuSkiaBackend, FrameBuffer, RenderBackend};
     use crate::schema::{
-        IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap, TextAlign,
+        IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap, LineHead, TextAlign,
     };
     use crate::scene::types::{
-        ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
+        ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
         ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
         ResolvedParametricGraph, ResolvedRect, ResolvedText,
     };
@@ -441,13 +441,16 @@ mod tests {
                 },
                 ResolvedNode {
                     batch_kind: ResolvedNodeBatchKind::Dynamic,
-                    data: ResolvedNodeData::Arrow(ResolvedArrow {
-                        width: 38.0,
-                        height: 24.0,
-                        start: (0.0, 12.0),
-                        end: (38.0, 12.0),
+                    data: ResolvedNodeData::Line(ResolvedLine {
+                        x1: 0.0,
+                        y1: 12.0,
+                        x2: 38.0,
+                        y2: 12.0,
                         stroke: (34, 197, 94),
                         stroke_width: 3.0,
+                        cap: LineCap::Round,
+                        draw_progress: 1.0,
+                        head: LineHead::End,
                         head_size: 10.0,
                     }),
                     x: 8.0,
@@ -472,6 +475,8 @@ mod tests {
                         stroke_width: 3.0,
                         cap: LineCap::Round,
                         draw_progress: 1.0,
+                        head: LineHead::None,
+                        head_size: 10.0,
                     }),
                     x: 12.0,
                     y: 94.0,

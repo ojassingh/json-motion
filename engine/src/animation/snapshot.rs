@@ -48,15 +48,6 @@ fn apply_base(node: &mut Node, tracks: &NodeTracks, t: f64) {
 
 fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
     match node {
-        Node::Arrow(arrow) => {
-            arrow.stroke = tracks.color(
-                "stroke",
-                Some(arrow.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
-                t,
-            );
-            arrow.stroke_width =
-                Some(tracks.num("strokeWidth", arrow.stroke_width.unwrap_or(2.0), t));
-        }
         Node::Circle(circle) => {
             circle.radius = tracks.num("radius", circle.radius, t);
             circle.fill = tracks.color("fill", circle.fill.as_deref(), t);
@@ -93,10 +84,10 @@ fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
                 Some(tracks.num("strokeWidth", icon.stroke_width.unwrap_or(2.0), t));
         }
         Node::Line(line) => {
-            line.x1 = tracks.num("x1", line.x1, t);
-            line.y1 = tracks.num("y1", line.y1, t);
-            line.x2 = tracks.num("x2", line.x2, t);
-            line.y2 = tracks.num("y2", line.y2, t);
+            line.x1 = line.x1.map(|x1| tracks.num("x1", x1, t));
+            line.y1 = line.y1.map(|y1| tracks.num("y1", y1, t));
+            line.x2 = line.x2.map(|x2| tracks.num("x2", x2, t));
+            line.y2 = line.y2.map(|y2| tracks.num("y2", y2, t));
             line.stroke = tracks.color(
                 "stroke",
                 Some(line.stroke.as_deref().unwrap_or(DEFAULT_TEXT_COLOR)),
@@ -147,7 +138,6 @@ fn apply_node_data(node: &mut Node, tracks: &NodeTracks, t: f64) {
 fn base_mut(node: &mut Node) -> &mut NodeBase {
     match node {
         Node::Align(node) => &mut node.base,
-        Node::Arrow(node) => &mut node.base,
         Node::Circle(node) => &mut node.base,
         Node::Center(node) => &mut node.base,
         Node::FunctionGraph(node) => &mut node.base,

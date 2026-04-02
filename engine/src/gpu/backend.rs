@@ -4,8 +4,8 @@ use crate::text::TextMeasurer;
 
 use super::atlas;
 use super::geometry::{
-    append_arrow_geometry, append_circle_geometry, append_function_graph_geometry,
-    append_line_geometry, append_parametric_graph_geometry,
+    append_circle_geometry, append_function_graph_geometry, append_line_geometry,
+    append_parametric_graph_geometry,
 };
 use super::path_pipeline::{self, PathBatch, PathVertex};
 use super::readback::ReadbackBuffer;
@@ -199,8 +199,7 @@ impl WgpuBackend {
         frame.nodes.iter().all(|node| {
             matches!(
                 node.data,
-                ResolvedNodeData::Arrow(_)
-                    | ResolvedNodeData::Circle(_)
+                ResolvedNodeData::Circle(_)
                     | ResolvedNodeData::FunctionGraph(_)
                     | ResolvedNodeData::Icon(_)
                     | ResolvedNodeData::Line(_)
@@ -468,7 +467,6 @@ impl WgpuBackend {
         out_indices: &mut Vec<u32>,
     ) {
         match &node.data {
-            ResolvedNodeData::Arrow(arrow) => append_arrow_geometry(node, arrow, out_vertices, out_indices),
             ResolvedNodeData::Circle(circle) => {
                 append_circle_geometry(node, circle, out_vertices, out_indices)
             }

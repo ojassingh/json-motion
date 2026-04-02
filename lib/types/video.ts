@@ -10,9 +10,6 @@ import type {
   videoAiSceneSchema,
   videoAlignNodeSchema,
   videoAnchorSchema,
-  videoArrowEndpointRefSchema,
-  videoArrowNodeSchema,
-  videoArrowPositionSchema,
   videoCenterNodeSchema,
   videoCircleNodeSchema,
   videoDescriptionSchema,
@@ -23,6 +20,8 @@ import type {
   videoIconLineJoinSchema,
   videoIconNodeSchema,
   videoIconPrimitiveSchema,
+  videoLineEndpointRefSchema,
+  videoLineHeadSchema,
   videoLineNodeSchema,
   videoNodeSchema,
   videoParametricGraphNodeSchema,
@@ -56,9 +55,6 @@ export type VideoAiRenderableNode = Exclude<VideoAiNode, { type: "repeat" }>;
 export type ExpandedVideoAiScene = Omit<VideoAiScene, "nodes"> & {
   nodes: Record<string, VideoAiRenderableNode>;
 };
-export type VideoArrowEndpointRef = z.infer<typeof videoArrowEndpointRefSchema>;
-export type VideoArrowNode = z.infer<typeof videoArrowNodeSchema>;
-export type VideoArrowPosition = z.infer<typeof videoArrowPositionSchema>;
 export type VideoCircleNode = z.infer<typeof videoCircleNodeSchema>;
 export type VideoFunctionGraphNode = z.infer<
   typeof videoFunctionGraphNodeSchema
@@ -67,6 +63,8 @@ export type VideoIconLineCap = z.infer<typeof videoIconLineCapSchema>;
 export type VideoIconLineJoin = z.infer<typeof videoIconLineJoinSchema>;
 export type VideoIconNode = z.infer<typeof videoIconNodeSchema>;
 export type VideoIconPrimitive = z.infer<typeof videoIconPrimitiveSchema>;
+export type VideoLineEndpointRef = z.infer<typeof videoLineEndpointRefSchema>;
+export type VideoLineHead = z.infer<typeof videoLineHeadSchema>;
 export type VideoLineNode = z.infer<typeof videoLineNodeSchema>;
 export type VideoNode = z.infer<typeof videoNodeSchema>;
 export type VideoParametricGraphNode = z.infer<

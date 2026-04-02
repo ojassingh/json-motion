@@ -1,9 +1,9 @@
 use super::path_pipeline::{self, PathVertex, StrokeStyle};
 use super::util::{muted_color, rgba, stroke_style};
 use crate::scene::types::{
-    ResolvedArrow, ResolvedCircle, ResolvedFunctionGraph, ResolvedLine, ResolvedNode,
-    ResolvedParametricGraph,
+    ResolvedCircle, ResolvedFunctionGraph, ResolvedLine, ResolvedNode, ResolvedParametricGraph,
 };
+use crate::schema::LineHead;
 
 struct PathGeometrySpec<'a> {
     d: &'a str,
@@ -93,71 +93,6 @@ fn graph_visible_points(points: &[(f64, f64)], draw_progress: f64) -> Option<&[(
         return None;
     }
     Some(&points[..count])
-}
-
-pub(super) fn append_arrow_geometry(
-    node: &ResolvedNode,
-    arrow: &ResolvedArrow,
-    out_vertices: &mut Vec<PathVertex>,
-    out_indices: &mut Vec<u32>,
-) {
-    if arrow.stroke_width <= 0.0 {
-        return;
-    }
-
-    let shaft_path = svg_line_path(arrow.start, arrow.end);
-    append_svg_path_geometry(
-        node,
-        PathGeometrySpec {
-            d: &shaft_path,
-            fill_color: None,
-            height: arrow.height,
-            stroke: Some(stroke_style(
-                arrow.stroke,
-                arrow.stroke_width,
-                lyon::tessellation::LineCap::Butt,
-                lyon::tessellation::LineJoin::MiterClip,
-                1.0,
-            )),
-            width: arrow.width,
-        },
-        out_vertices,
-        out_indices,
-    );
-
-    let dx = arrow.end.0 - arrow.start.0;
-    let dy = arrow.end.1 - arrow.start.1;
-    let length = (dx * dx + dy * dy).sqrt();
-    if length <= f64::EPSILON {
-        return;
-    }
-
-    let ux = dx / length;
-    let uy = dy / length;
-    let nx = -uy;
-    let ny = ux;
-    let back_x = arrow.end.0 - ux * arrow.head_size;
-    let back_y = arrow.end.1 - uy * arrow.head_size;
-    let wing = arrow.head_size * 0.45;
-    let points = [
-        arrow.end,
-        (back_x + nx * wing, back_y + ny * wing),
-        (back_x - nx * wing, back_y - ny * wing),
-    ];
-    if let Some(head_path) = svg_polyline_path(&points, true) {
-        append_svg_path_geometry(
-            node,
-            PathGeometrySpec {
-                d: &head_path,
-                fill_color: Some(rgba(arrow.stroke, 1.0)),
-                height: arrow.height,
-                stroke: None,
-                width: arrow.width,
-            },
-            out_vertices,
-            out_indices,
-        );
-    }
 }
 
 pub(super) fn append_circle_geometry(
@@ -366,6 +301,80 @@ pub(super) fn append_line_geometry(
         out_vertices,
         out_indices,
     );
+    if matches!(line.head, LineHead::Start | LineHead::Both) {
+        append_line_head_geometry(
+            node,
+            width,
+            height,
+            line.stroke,
+            line.head_size,
+            end,
+            (line.x1, line.y1),
+            out_vertices,
+            out_indices,
+        );
+    }
+    if matches!(line.head, LineHead::End | LineHead::Both) {
+        append_line_head_geometry(
+            node,
+            width,
+            height,
+            line.stroke,
+            line.head_size,
+            (line.x1, line.y1),
+            end,
+            out_vertices,
+            out_indices,
+        );
+    }
+}
+
+fn append_line_head_geometry(
+    node: &ResolvedNode,
+    width: f64,
+    height: f64,
+    stroke: (u8, u8, u8),
+    head_size: f64,
+    tail: (f64, f64),
+    tip: (f64, f64),
+    out_vertices: &mut Vec<PathVertex>,
+    out_indices: &mut Vec<u32>,
+) {
+    if head_size <= 0.0 {
+        return;
+    }
+    let dx = tip.0 - tail.0;
+    let dy = tip.1 - tail.1;
+    let length = (dx * dx + dy * dy).sqrt();
+    if length <= f64::EPSILON {
+        return;
+    }
+    let ux = dx / length;
+    let uy = dy / length;
+    let nx = -uy;
+    let ny = ux;
+    let back_x = tip.0 - ux * head_size;
+    let back_y = tip.1 - uy * head_size;
+    let wing = head_size * 0.45;
+    let points = [
+        tip,
+        (back_x + nx * wing, back_y + ny * wing),
+        (back_x - nx * wing, back_y - ny * wing),
+    ];
+    if let Some(head_path) = svg_polyline_path(&points, true) {
+        append_svg_path_geometry(
+            node,
+            PathGeometrySpec {
+                d: &head_path,
+                fill_color: Some(rgba(stroke, 1.0)),
+                height,
+                stroke: None,
+                width,
+            },
+            out_vertices,
+            out_indices,
+        );
+    }
 }
 
 pub(super) fn append_parametric_graph_geometry(

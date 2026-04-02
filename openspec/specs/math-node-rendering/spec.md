@@ -2,19 +2,17 @@
 
 ## Purpose
 Define math node validation, pre-rendering, layout sizing, and frame rendering behavior.
-
 ## Requirements
-
 ### Requirement: Math nodes declare a LaTeX string with visual properties
-The system SHALL accept a node with `type: "math"` that includes a required `latex` string, required `fontSize` (positive number controlling scale), optional `width` and `height` (bounding box hints ignored when pre-render cache dimensions are available), and an optional `color` (hex color, defaulting to `#f8fafc`). The node SHALL also accept all base transform properties (`x`, `y`, `opacity`, `rotate`, `scale`, `scaleX`, `scaleY`, `skewX`, `skewY`, `anchor`, `zIndex`, `primitives`) and an `animate` block supporting the base animatable properties. When `width` and `height` are omitted and a pre-render cache is available, the rendered dimensions SHALL be derived from the cached image and `fontSize`.
+The system SHALL accept a node with `type: "equation"` (replacing the previously proposed `type: "math"`) that includes a required `latex` string and optional `size` (positive number, controlling font size and scale, default 48) and optional `color` (hex color, default `#f8fafc`). The node SHALL accept all base transform properties. The node SHALL NOT accept `width` or `height` — rendered dimensions are derived from the MathJax output. The node is resolved on the TS side to a `VideoIconNode` before the Rust engine processes the scene.
 
-#### Scenario: A valid math node without width and height is accepted
-- **WHEN** a scene contains a node with `type: "math"`, `latex: "E = mc^2"`, `fontSize: 48`, and `color: "#ffffff"` but no `width` or `height`
-- **THEN** validation succeeds and the node is available to the pre-render and frame resolution pipeline
+#### Scenario: A valid equation node without size is accepted
+- **WHEN** a scene contains a node with `type: "equation"`, `latex: "E = mc^2"`, and `color: "#ffffff"` but no `size`
+- **THEN** validation succeeds, the default `size: 48` is applied, and the node is available to the resolution pipeline
 
-#### Scenario: A math node without required fields is rejected
-- **WHEN** a scene contains a node with `type: "math"` but omits `latex`
-- **THEN** validation rejects the request before rendering begins
+#### Scenario: An equation node without the required latex field is rejected
+- **WHEN** a scene contains a node with `type: "equation"` but omits `latex`
+- **THEN** validation rejects the request before resolution begins
 
 ### Requirement: Math nodes are pre-rendered to Skia images before the frame loop
 The pre-render phase SHALL scan the entire scene tree for every node with `type: "math"`, collect all unique `(latex, color)` combinations, render each to a self-contained SVG string using MathJax's `tex2svg` Node.js adapter, load each SVG into a Skia image, and store the results in a `Map` keyed by `latex::color`. This pre-render step SHALL run exactly once before the first frame is rasterized.
@@ -58,3 +56,4 @@ The pre-render phase SHALL catch MathJax errors for invalid LaTeX and throw an e
 #### Scenario: Malformed LaTeX is caught before the frame loop
 - **WHEN** a math node contains `latex: "\\frac{"`
 - **THEN** the pre-render phase throws a `PRERENDER_ERROR` before any frame is rendered
+

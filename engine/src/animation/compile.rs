@@ -267,7 +267,7 @@ fn classify_render_batch_kind(
     has_layout_nodes: bool,
     has_static_layout: bool,
 ) -> ResolvedNodeBatchKind {
-    if matches!(node, Node::Arrow(_)) {
+    if matches!(node, Node::Line(line) if line.from.is_some() || line.to.is_some()) {
         return ResolvedNodeBatchKind::Dynamic;
     }
 
@@ -283,7 +283,6 @@ fn classify_render_batch_kind(
     }
 
     let node_dynamic_props: &[&str] = match node {
-        Node::Arrow(_) => &["strokeWidth", "stroke"],
         Node::Circle(_) => &["radius", "strokeWidth", "drawProgress", "fill", "stroke"],
         Node::FunctionGraph(_) => &["drawProgress", "color", "strokeWidth"],
         Node::Icon(_) => &["width", "height", "strokeWidth", "fill", "stroke"],

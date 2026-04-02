@@ -2,8 +2,8 @@ use indexmap::IndexMap;
 
 use crate::animation::{compile_video, frame_render_hint, resolve_frame_fast, total_frame_count};
 use crate::schema::{
-    AlignNode, Anchor, ArrowNode, ArrowPosition, Node, NodeBase, RectNode, SceneEntry,
-    VideoDescription,
+    AlignNode, Anchor, LineEndpoint, LineEndpointTarget, LineHead, LineNode, Node, NodeBase,
+    RectNode, SceneEntry, VideoDescription,
 };
 use crate::scene::types::{ResolvedNodeBatchKind, ResolvedNodeData};
 use crate::text::SkiaTextMeasurer;
@@ -392,8 +392,24 @@ fn frame_render_hint_should_disable_reuse_for_animated_scenes() {
 }
 
 #[test]
-fn resolve_frame_fast_should_track_arrow_targets_against_motion() {
+fn resolve_frame_fast_should_track_line_endpoints_against_motion() {
     let mut nodes = IndexMap::new();
+    nodes.insert(
+        "label".to_string(),
+        Node::Rect(RectNode {
+            base: NodeBase {
+                x: Some(40.0),
+                y: Some(88.0),
+                ..NodeBase::default()
+            },
+            width: 24.0,
+            height: 24.0,
+            fill: Some("#0f172a".to_string()),
+            stroke: None,
+            stroke_width: None,
+            corner_radius: None,
+        }),
+    );
     nodes.insert(
         "box".to_string(),
         Node::Rect(RectNode {
@@ -411,17 +427,26 @@ fn resolve_frame_fast_should_track_arrow_targets_against_motion() {
         }),
     );
     nodes.insert(
-        "arrow".to_string(),
-        Node::Arrow(ArrowNode {
+        "connector".to_string(),
+        Node::Line(LineNode {
             base: NodeBase::default(),
-            from: None,
-            to: None,
-            target: Some("box".to_string()),
-            position: Some(ArrowPosition::Above),
-            gap: Some(8.0),
-            length: Some(24.0),
+            x1: None,
+            y1: None,
+            x2: None,
+            y2: None,
+            from: Some(LineEndpoint::NodeRef(LineEndpointTarget {
+                node: "label".to_string(),
+                anchor: Some(Anchor::CenterRight),
+            })),
+            to: Some(LineEndpoint::NodeRef(LineEndpointTarget {
+                node: "box".to_string(),
+                anchor: Some(Anchor::CenterLeft),
+            })),
             stroke: Some("#f8fafc".to_string()),
             stroke_width: Some(4.0),
+            cap: None,
+            draw_progress: Some(1.0),
+            head: Some(LineHead::End),
             head_size: Some(10.0),
         }),
     );
@@ -473,24 +498,25 @@ fn resolve_frame_fast_should_track_arrow_targets_against_motion() {
     let moved_frame =
         resolve_frame_fast(&compiled, 15, &measurer).expect("moved frame should resolve");
 
-    let start_arrow = start_frame
+    let start_line = start_frame
         .nodes
         .iter()
         .find_map(|node| match &node.data {
-            ResolvedNodeData::Arrow(arrow) => Some((node, arrow)),
+            ResolvedNodeData::Line(line) => Some((node, line)),
             _ => None,
         })
-        .expect("expected arrow in start frame");
-    let moved_arrow = moved_frame
+        .expect("expected line in start frame");
+    let moved_line = moved_frame
         .nodes
         .iter()
         .find_map(|node| match &node.data {
-            ResolvedNodeData::Arrow(arrow) => Some((node, arrow)),
+            ResolvedNodeData::Line(line) => Some((node, line)),
             _ => None,
         })
-        .expect("expected arrow in moved frame");
+        .expect("expected line in moved frame");
 
-    assert_eq!(start_arrow.0.x, 140.0);
-    assert_eq!(moved_arrow.0.x, 160.0);
-    assert_eq!(start_arrow.1.end.1, moved_arrow.1.end.1);
+    assert_eq!(start_line.0.x, moved_line.0.x);
+    assert_eq!(start_line.1.x1, moved_line.1.x1);
+    assert_eq!(start_line.1.x2 + 20.0, moved_line.1.x2);
+    assert_eq!(start_line.1.head, LineHead::End);
 }

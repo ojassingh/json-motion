@@ -4,10 +4,10 @@ use skia_safe::{
 };
 
 use crate::icon;
-use crate::schema::{LineCap, TextAlign};
+use crate::schema::{LineCap, LineHead, TextAlign};
 use crate::scene::types::{
-    ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine,
-    ResolvedNode, ResolvedNodeData, ResolvedParametricGraph, ResolvedRect, ResolvedText,
+    ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedLine, ResolvedNode,
+    ResolvedNodeData, ResolvedParametricGraph, ResolvedRect, ResolvedText,
 };
 use crate::text::{self, TextMeasurer};
 
@@ -54,7 +54,6 @@ impl RenderBackend for CpuSkiaBackend {
 
         for node in &frame.nodes {
             match &node.data {
-                ResolvedNodeData::Arrow(arrow) => draw_arrow(canvas, node, arrow),
                 ResolvedNodeData::Circle(circle) => draw_circle(canvas, node, circle),
                 ResolvedNodeData::FunctionGraph(graph) => draw_function_graph(canvas, node, graph),
                 ResolvedNodeData::Icon(icon) => icon::draw_icon(canvas, node, icon),
@@ -96,44 +95,38 @@ fn draw_rect(canvas: &skia_safe::Canvas, node: &ResolvedNode, rect: &ResolvedRec
     canvas.restore();
 }
 
-fn draw_arrow(canvas: &skia_safe::Canvas, node: &ResolvedNode, arrow: &ResolvedArrow) {
-    let alpha = (255.0 * node.opacity.clamp(0.0, 1.0)) as u8;
-    let dx = arrow.end.0 - arrow.start.0;
-    let dy = arrow.end.1 - arrow.start.1;
-    let length = (dx * dx + dy * dy).sqrt();
-
-    canvas.save();
-    apply_node_transform(canvas, node, arrow.width as f32, arrow.height as f32);
-
-    if arrow.stroke_width > 0.0 {
-        let mut line_paint = make_paint(alpha, arrow.stroke, paint::Style::Stroke);
-        line_paint.set_stroke_width(arrow.stroke_width as f32);
-        canvas.draw_line(
-            (arrow.start.0 as f32, arrow.start.1 as f32),
-            (arrow.end.0 as f32, arrow.end.1 as f32),
-            &line_paint,
-        );
-
-        if length > f64::EPSILON {
-            let ux = dx / length;
-            let uy = dy / length;
-            let nx = -uy;
-            let ny = ux;
-            let back_x = arrow.end.0 - ux * arrow.head_size;
-            let back_y = arrow.end.1 - uy * arrow.head_size;
-            let wing = arrow.head_size * 0.45;
-            let left = (back_x + nx * wing, back_y + ny * wing);
-            let right = (back_x - nx * wing, back_y - ny * wing);
-            if let Some(head) = Path::from_svg(&format!(
-                "M{} {} L{} {} L{} {} Z",
-                arrow.end.0, arrow.end.1, left.0, left.1, right.0, right.1
-            )) {
-                canvas.draw_path(&head, &make_paint(alpha, arrow.stroke, paint::Style::Fill));
-            }
-        }
+fn draw_line_head(
+    canvas: &skia_safe::Canvas,
+    alpha: u8,
+    stroke: (u8, u8, u8),
+    head_size: f64,
+    tail: (f64, f64),
+    tip: (f64, f64),
+) {
+    if head_size <= 0.0 {
+        return;
     }
-
-    canvas.restore();
+    let dx = tip.0 - tail.0;
+    let dy = tip.1 - tail.1;
+    let length = (dx * dx + dy * dy).sqrt();
+    if length <= f64::EPSILON {
+        return;
+    }
+    let ux = dx / length;
+    let uy = dy / length;
+    let nx = -uy;
+    let ny = ux;
+    let back_x = tip.0 - ux * head_size;
+    let back_y = tip.1 - uy * head_size;
+    let wing = head_size * 0.45;
+    let left = (back_x + nx * wing, back_y + ny * wing);
+    let right = (back_x - nx * wing, back_y - ny * wing);
+    if let Some(head) = Path::from_svg(&format!(
+        "M{} {} L{} {} L{} {} Z",
+        tip.0, tip.1, left.0, left.1, right.0, right.1
+    )) {
+        canvas.draw_path(&head, &make_paint(alpha, stroke, paint::Style::Fill));
+    }
 }
 
 fn muted_color((r, g, b): (u8, u8, u8), factor: f32) -> (u8, u8, u8) {
@@ -326,6 +319,19 @@ fn draw_line(canvas: &skia_safe::Canvas, node: &ResolvedNode, line: &ResolvedLin
             (end.0 as f32, end.1 as f32),
             &paint,
         );
+        if matches!(line.head, LineHead::Start | LineHead::Both) {
+            draw_line_head(
+                canvas,
+                alpha,
+                line.stroke,
+                line.head_size,
+                end,
+                (line.x1, line.y1),
+            );
+        }
+        if matches!(line.head, LineHead::End | LineHead::Both) {
+            draw_line_head(canvas, alpha, line.stroke, line.head_size, (line.x1, line.y1), end);
+        }
     }
 
     canvas.restore();
@@ -396,10 +402,10 @@ fn read_rgba_pixels(surface: &mut Surface, target: &mut FrameBuffer) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::{CpuSkiaBackend, FrameBuffer, RenderBackend};
-    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap};
+    use crate::schema::{IconLineCap, IconLineJoin, IconPathPrimitive, IconPrimitive, LineCap, LineHead};
     use crate::scene::types::{
-        ResolvedArrow, ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon,
-        ResolvedLine, ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
+        ResolvedCircle, ResolvedFrame, ResolvedFunctionGraph, ResolvedIcon, ResolvedLine,
+        ResolvedNode, ResolvedNodeBatchKind, ResolvedNodeData,
     };
     use crate::text::SkiaTextMeasurer;
     use crate::text::TextMeasurer;
@@ -457,51 +463,6 @@ mod tests {
                 .chunks_exact(4)
                 .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
             "expected icon rendering to change at least one pixel"
-        );
-    }
-
-    #[test]
-    fn arrow_rendering_should_paint_non_background_pixels() {
-        let frame = ResolvedFrame {
-            background: (255, 255, 255),
-            nodes: vec![ResolvedNode {
-                batch_kind: ResolvedNodeBatchKind::Dynamic,
-                data: ResolvedNodeData::Arrow(ResolvedArrow {
-                    width: 48.0,
-                    height: 24.0,
-                    start: (0.0, 12.0),
-                    end: (48.0, 12.0),
-                    stroke: (0, 0, 0),
-                    stroke_width: 3.0,
-                    head_size: 10.0,
-                }),
-                x: 0.0,
-                y: 12.0,
-                opacity: 1.0,
-                rotation: 0.0,
-                scale_x: 1.0,
-                scale_y: 1.0,
-                skew_x: 0.0,
-                skew_y: 0.0,
-                z_index: 0,
-                source_index: 0,
-            }],
-            scene_cache_key: 0,
-        };
-        let measurer = SkiaTextMeasurer::new();
-        let mut backend = CpuSkiaBackend::new();
-        let mut buffer = FrameBuffer::new(64, 64);
-
-        backend
-            .render_into(&frame, &mut buffer, &measurer as &dyn TextMeasurer)
-            .expect("arrow frame should render");
-
-        assert!(
-            buffer
-                .pixels()
-                .chunks_exact(4)
-                .any(|pixel| pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255),
-            "expected arrow rendering to change at least one pixel"
         );
     }
 
@@ -617,6 +578,8 @@ mod tests {
                     stroke_width: 4.0,
                     cap: LineCap::Round,
                     draw_progress: 1.0,
+                    head: LineHead::End,
+                    head_size: 10.0,
                 }),
                 x: 8.0,
                 y: 24.0,
