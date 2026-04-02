@@ -2,9 +2,7 @@
 
 ## Purpose
 Define the AI generation contract for prompt-to-video so provider output, prompt guidance, and engine validation stay aligned.
-
 ## Requirements
-
 ### Requirement: Prompt generation produces a schema-valid video description
 The prompt-to-video endpoint SHALL use AI SDK structured output bound to `videoAiOutputSchema` (not `videoDescriptionSchema`) to generate AI output. The generation pipeline SHALL then convert the AI output to a `VideoDescription` by parsing seconds durations to frame counts, computing `startFrame` for each scene, and injecting canvas metadata (`fps`, `width`, `height`) before validating against `videoDescriptionSchema`.
 
@@ -17,19 +15,19 @@ The prompt-to-video endpoint SHALL use AI SDK structured output bound to `videoA
 - **THEN** `generateSceneJson` produces an engine description with that scene having `duration: 180` and `startFrame` correctly computed
 
 ### Requirement: The AI system prompt documents all supported node types and their properties
-The system prompt SHALL be auto-generated from the component catalog via `catalog.toPrompt()` rather than hand-written. The generated prompt SHALL list all supported node types including layout primitives (`center`, `stack`, `align`) alongside `group`, `rect`, `text`, `math`, `functionGraph`, and `parametricGraph`. For each node type, the prompt SHALL include the type name, description, required and optional props with their types and constraints (derived from the catalog's Zod schemas), whether the node accepts children, and which animation properties it supports. The prompt SHALL include a layout guidance section that instructs the model to prefer layout primitives over raw pixel coordinates for common composition patterns.
+The system prompt SHALL be auto-generated from the component catalog via `catalog.toPrompt()` rather than hand-written. The generated prompt SHALL list all supported node types. For each node type, the prompt SHALL include the type name, an educationally-opinionated description explaining intended use cases, required and optional props with types and constraints, whether the node accepts children, and which animation properties it supports. The prompt SHALL include: a layout guidance section, a canvas coordinate system section, a `## Scene Recipes` section with at least 5 named patterns, and an `## Anti-Patterns` section. Catalog node descriptions SHALL be opinionated about use cases, not merely syntactic.
 
-#### Scenario: The system prompt includes layout primitive documentation
+#### Scenario: The system prompt contains a Scene Recipes section
 - **WHEN** the system prompt is generated from the catalog
-- **THEN** it contains documentation for `center`, `stack`, and `align` node types with their props and usage guidance
+- **THEN** the output contains a `## Scene Recipes` section with named all-caps patterns (e.g. LABELED_DIAGRAM, STEP_BY_STEP_REVEAL)
 
-#### Scenario: The system prompt reflects actual schema constraints
+#### Scenario: The system prompt contains an Anti-Patterns section
+- **WHEN** the system prompt is generated from the catalog
+- **THEN** the output contains an `## Anti-Patterns` section explicitly prohibiting icon nodes for domain concepts
+
+#### Scenario: The generated prompt reflects Zod enum constraints
 - **WHEN** the catalog declares `direction` as `z.enum(["vertical", "horizontal"])` for the `stack` node
 - **THEN** the generated prompt for `stack` lists `direction` with allowed values `"vertical"` and `"horizontal"`
-
-#### Scenario: The prompt does not contain information about non-existent types
-- **WHEN** the catalog does not include a `chart` node type
-- **THEN** the generated prompt contains no mention of `chart` as a valid node type
 
 ### Requirement: The system prompt instructs the model to use layout primitives for common patterns
 The system prompt SHALL include guidance that instructs the model to use `center` when an element should be in the middle of the frame, `stack` for sequences of elements, and `align` for edge-positioned elements like titles. The prompt SHALL instruct the model to use raw `x`/`y` coordinates only when precise pixel positioning is explicitly needed. The prompt SHALL NOT instruct the model to manually compute center coordinates as `width/2`, `height/2`.
@@ -59,3 +57,4 @@ The system prompt generation SHALL be a pure function of the catalog definition 
 #### Scenario: Prompt generation is idempotent
 - **WHEN** `catalog.toPrompt({ width: 960, height: 540, fps: 60 })` is called twice with the same catalog
 - **THEN** both calls produce identical strings
+
