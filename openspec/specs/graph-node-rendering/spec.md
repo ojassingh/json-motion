@@ -22,25 +22,25 @@ The system SHALL accept a node with `type: "parametricGraph"` that includes requ
 - **THEN** validation succeeds and the node is available to the pre-sample and frame resolution pipeline
 
 ### Requirement: Graph nodes are pre-sampled before the frame loop
-The pre-sample phase SHALL scan the scene tree for `functionGraph` and `parametricGraph` nodes, compile their expressions using mathjs, sample points across their respective ranges, map sampled values to pixel coordinates within the node's bounding box, and store the resulting pixel point arrays in a cache keyed by node ID. For `functionGraph`, the sample count SHALL equal the node's `width` in pixels. For `parametricGraph`, the sample count SHALL equal the node's `samples` property (default 500). This step SHALL run exactly once before the first frame is rasterized.
+The pre-sample phase SHALL be implemented on the TypeScript side (not in the Rust engine) as a `preComputeGraphNodes` function. It SHALL scan all scenes for `functionGraph` and `parametricGraph` nodes, compile their expressions using the `mathjs` library, sample points, map to pixel coordinates, skip NaN/Infinity values, and embed the resulting `points` arrays directly into the engine-facing node definitions. This step SHALL run exactly once, before the `renderVideo` call, as part of the `convertAiOutputToVideoDescription` pipeline. No expression evaluation SHALL occur in the Rust engine.
 
-#### Scenario: FunctionGraph points map to pixel coordinates
-- **WHEN** a functionGraph has `fn: "x"`, `xRange: [0, 1]`, `yRange: [0, 1]`, `width: 100`, `height: 100`
-- **THEN** the pre-sample phase produces 100 pixel points mapping the identity function to the bounding box, with point (0,0) mapping to pixel (0, 100) and point (1,1) mapping to pixel (100, 0)
+#### Scenario: FunctionGraph points are embedded before the engine receives the scene
+- **WHEN** an AI output contains a functionGraph node with `fn: "sin(x)"` and `width: 600`
+- **THEN** the engine-facing scene description contains that node with a `points` array of 600 `{x, y}` objects, and the `fn` field may be retained for reference or omitted
 
 #### Scenario: NaN and Infinity values are skipped
 - **WHEN** a functionGraph evaluates `fn: "1/x"` and a sample hits `x = 0`
-- **THEN** the resulting point is skipped (not included in the pixel array), producing a gap in the curve
+- **THEN** the resulting point is excluded from the `points` array
 
 ### Requirement: Graph nodes draw animated curves from cached point arrays per frame
-The per-frame draw path for graph nodes SHALL resolve `drawProgress` from the animate block (default `1`), clip the cached pixel point array to `Math.floor(points.length * drawProgress)` points, and stroke the resulting path. `functionGraph` nodes SHALL additionally draw x-axis and y-axis lines through the mapped origin when `showAxes` is `true`, and evenly spaced grid lines in a muted color when `showGrid` is `true`. No mathjs calls SHALL occur during the frame loop.
+The per-frame draw path for graph nodes in the Rust renderer SHALL clip the `points` array to `floor(points.length * draw_progress)` points and stroke the resulting path. `functionGraph` nodes SHALL draw axis lines through the mapped origin when `show_axes` is `true`, and evenly spaced grid lines in a muted color when `show_grid` is `true`. No expression evaluation SHALL occur during the frame loop.
 
 #### Scenario: drawProgress at 0.5 draws half the curve
-- **WHEN** a functionGraph has 200 cached points and `drawProgress` resolves to `0.5` at the current frame
+- **WHEN** a functionGraph has 200 points and `draw_progress` resolves to `0.5` at the current frame
 - **THEN** the draw path strokes only the first 100 points
 
 #### Scenario: showAxes draws axis lines through the origin
-- **WHEN** a functionGraph has `showAxes: true`, `xRange: [-5, 5]`, `yRange: [-5, 5]`
+- **WHEN** a functionGraph has `show_axes: true`, `xRange: [-5, 5]`, `yRange: [-5, 5]`
 - **THEN** the draw path renders a horizontal line at `y=0` and a vertical line at `x=0`, both mapped to pixel coordinates within the bounding box
 
 ### Requirement: Invalid math expressions produce a clear pre-render error
@@ -49,3 +49,4 @@ The pre-sample phase SHALL catch mathjs compilation or evaluation errors and thr
 #### Scenario: An invalid function expression is caught before the frame loop
 - **WHEN** a functionGraph contains `fn: "sin("`
 - **THEN** the pre-sample phase throws a `PRERENDER_ERROR` before any frame is rendered
+
