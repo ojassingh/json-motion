@@ -591,3 +591,36 @@
 ### Notes
 
 - Verified the local and orchestration code paths in-repo, but did not run a live end-to-end Modal render because that requires a deployed Modal endpoint plus configured R2 environment variables in the remote runtime.
+
+---
+
+## Line/Arrow Unification
+
+- [x] Collapse `arrow` into `line` in the shared TS schema and exported types while preserving absolute `x1`/`y1`/`x2`/`y2` lines.
+- [x] Add reference-based `from` / `to` endpoints plus `head` / `headSize`, update validation, macros, and prompt guidance with a correct example.
+- [x] Remove the separate arrow path from the Rust schema, layout, resolve, CPU render, and GPU geometry/backend so endpoint-based lines resolve after layout.
+- [x] Add focused TS and Rust regression coverage for headed lines and reference-based line resolution, then run targeted tests.
+- [x] Split the work into many small conventional commits, push a review branch, open a PR, and redeploy the Modal render service.
+
+### Review
+
+- Unified the AI-facing stroke model around `line`, keeping coordinate mode for geometric strokes and adding deferred `from`/`to` endpoint refs plus optional `head` metadata for connectors.
+- Removed the separate arrow codepath from the Rust schema and renderers so CPU and GPU now resolve and draw headed lines through the same primitive.
+- Kept the prompt update narrow: the catalog now forbids a separate arrow concept and includes one concrete endpoint-based connector example.
+- Included the unrelated archived OpenSpec moves as separate `chore(openspec)` commits so review of the actual feature change stays clean.
+
+### Verification
+
+- `bun test lib/video/schema.test.ts lib/video/line.test.ts`
+- `bun x tsc --noEmit`
+- `bun x ultracite check lib/video/schema.ts lib/video/schema.test.ts lib/video/line.test.ts lib/video/validation.ts lib/types/video.ts lib/ai/prompt-to-video-config.ts`
+- `cargo test` in `engine/`
+- `cargo test --features gpu gpu_backend_submit_frame_should_render_vector_primitives -- --nocapture` in `engine/`
+- `cargo build --release --features gpu` in `engine/`
+- `modal deploy scripts/modal_render_api.py`
+
+### Result
+
+- Modal redeployed successfully with the rebuilt GPU-enabled Rust engine.
+- Web function: `https://ojas-singh02--motion-modal-render-render-video.modal.run`
+- Deployment page: `https://modal.com/apps/ojas-singh02/main/deployed/motion-modal-render`
