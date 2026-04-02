@@ -11,6 +11,12 @@ const fontMono = Geist_Mono({
   variable: "--font-mono",
 });
 
+export const metadata = {
+  title: "JSON-Motion | Generative Engine for Animations",
+  description:
+    "Motion is a deterministic, agent-native video engine built on Rust and Next.js.",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
